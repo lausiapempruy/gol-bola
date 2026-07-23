@@ -3,134 +3,151 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Ball Team Tycoon</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<title>Bola Gol - Stadion</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<div id="app">
 
-<div id="onboardOverlay" class="overlay">
-  <div class="glassCard onboardCard">
-    <div class="badgeBall">⚽</div>
-    <h1>Ball Team Tycoon</h1>
-    <p class="lead">Bangun klub dari nol — rekrut pemain, latih skuad, kelola keuangan, dan bawa timmu juara <b>FBG Cup</b> (Federation Ball Games).</p>
-    <label class="fieldLabel">Nama Klub Kamu</label>
-    <input id="clubNameInput" type="text" maxlength="24" placeholder="cth: Nusantara United FC">
-    <div class="btn primary big" id="startClubBtn">Dirikan Klub</div>
-    <p class="tiny center">Progres otomatis tersimpan di perangkat ini (localStorage).</p>
+  <div id="hud">
+    <div class="pill" id="modePill">NORMAL</div>
+    <div class="pill" id="scorePill">
+      <span class="teamB">BIRU</span>
+      <span id="scoreBlue">0</span>
+      <span class="dash">—</span>
+      <span id="scoreRed">0</span>
+      <span class="teamR">MERAH</span>
+    </div>
+    <div class="pill" id="timePill">05:00</div>
   </div>
-</div>
 
-<div id="app" class="hidden">
+  <div id="cardsHud">
+    <div class="cardRow"><span class="cardDot yellow"></span><span class="teamB">Biru</span> <span id="cyB">0</span><span class="cardDot red"></span><span id="crB">0</span></div>
+    <div class="cardRow"><span class="cardDot yellow"></span><span class="teamR">Merah</span> <span id="cyR">0</span><span class="cardDot red"></span><span id="crR">0</span></div>
+  </div>
 
-  <header id="topbar">
-    <div class="clubIdent">
-      <div class="clubCrest">⚽</div>
-      <div>
-        <div id="hClubName" class="clubName">Klub</div>
-        <div id="hSeasonWeek" class="clubSub">Musim 1 · Minggu 1</div>
+  <div id="canvasWrap">
+    <canvas id="field"></canvas>
+    <div id="centerFlash"></div>
+  </div>
+
+  <div id="controls" class="hidden">
+    <div class="dpad">
+      <div></div><div class="dbtn" data-k="up">▲</div><div></div>
+      <div class="dbtn" data-k="left">◀</div><div></div><div class="dbtn" data-k="right">▶</div>
+      <div></div><div class="dbtn" data-k="down">▼</div><div></div>
+    </div>
+    <div id="shootBtn">TENDANG</div>
+  </div>
+  <div id="hint" class="hidden">WASD / Panah = gerak &nbsp;•&nbsp; Spasi = tendang/oper</div>
+
+  <!-- MODE SELECT -->
+  <div id="modeOverlay" class="overlay">
+    <div class="card cardWide">
+      <h1>Bola Gol</h1>
+      <p class="lead">
+        Kamu jadi pemain <b style="color:#7de1ff">Tim Biru</b>, lawan <b style="color:#ff6b6b">Tim Merah</b> dikontrol AI sesuai kartu skill masing-masing pemain (50-200).<br>
+        <b>WASD</b>/panah gerak, <b>Spasi</b> tendang/oper. Lengkap wasit, kartu, pelanggaran, offside.
+      </p>
+      <div class="modeGrid">
+        <button class="modeBtn" data-mode="latihan"><span class="modeName">Latihan</span><span class="modeDesc">Tanpa wasit, lawan lemah (skill 50-75)</span></button>
+        <button class="modeBtn" data-mode="easy"><span class="modeName">Easy</span><span class="modeDesc">Skill lawan 75-105</span></button>
+        <button class="modeBtn" data-mode="normal"><span class="modeName">Normal (Sedang)</span><span class="modeDesc">Skill lawan 105-140</span></button>
+        <button class="modeBtn" data-mode="hard"><span class="modeName">Susah</span><span class="modeDesc">Skill lawan 140-195</span></button>
+        <button class="modeBtn wide" data-mode="sandbox"><span class="modeName">Sandbox — Bebas Parah</span><span class="modeDesc">Atur formasi, skill 50-200, offside, wasit, durasi, kecepatan</span></button>
       </div>
     </div>
-    <div class="statChips">
-      <div class="chip money">
-        <span class="chipLabel">Kas</span>
-        <span class="chipVal" id="hBudget">Rp0</span>
+  </div>
+
+  <!-- SANDBOX CONFIG -->
+  <div id="sandboxOverlay" class="overlay hidden">
+    <div class="card cardWide scrollable">
+      <h1>Sandbox</h1>
+      <p class="lead">Atur formasi & aturan sesuka hati. Kiper boleh sebanyak apapun, skill pemain lawan bisa 50-200.</p>
+      <div class="sbGrid">
+        <div class="sbCol">
+          <h3 class="teamB">Tim Biru (kamu + AI)</h3>
+          <label>Kiper (GK)<input type="number" id="sbBlueGK" min="0" max="10" value="1"></label>
+          <label>Bek (DF)<input type="number" id="sbBlueDF" min="0" max="6" value="2"></label>
+          <label>Gelandang (MF)<input type="number" id="sbBlueMF" min="0" max="6" value="2"></label>
+          <label>Penyerang AI (FW)<input type="number" id="sbBlueFW" min="0" max="6" value="1"></label>
+          <p class="tiny">*Kamu selalu jadi 1 penyerang tambahan, skill kartu tetap.</p>
+        </div>
+        <div class="sbCol">
+          <h3 class="teamR">Tim Merah (AI)</h3>
+          <label>Kiper (GK)<input type="number" id="sbRedGK" min="0" max="10" value="1"></label>
+          <label>Bek (DF)<input type="number" id="sbRedDF" min="0" max="6" value="2"></label>
+          <label>Gelandang (MF)<input type="number" id="sbRedMF" min="0" max="6" value="2"></label>
+          <label>Penyerang (FW)<input type="number" id="sbRedFW" min="0" max="6" value="2"></label>
+        </div>
       </div>
-      <div class="chip">
-        <span class="chipLabel">Reputasi</span>
-        <span class="chipVal" id="hReputation">0</span>
+      <div class="sbGrid">
+        <div class="sbCol">
+          <label class="rowLabel">Skill Minimum (50-200)<input type="number" id="sbSkillMin" min="50" max="200" value="90"></label>
+          <label class="rowLabel">Skill Maksimum (50-200)<input type="number" id="sbSkillMax" min="50" max="200" value="160"></label>
+          <label class="rowLabel">Offside
+            <select id="sbOffside"><option value="1" selected>Aktif</option><option value="0">Nonaktif</option></select>
+          </label>
+        </div>
+        <div class="sbCol">
+          <label class="rowLabel">Pelanggaran & Kartu
+            <select id="sbFouls"><option value="1" selected>Aktif</option><option value="0">Nonaktif</option></select>
+          </label>
+          <label class="rowLabel">Sifat Wasit
+            <select id="sbReferee">
+              <option value="adil" selected>Adil</option>
+              <option value="tidak_adil">Tidak Adil (bias)</option>
+              <option value="pro">Pro (super tegas & akurat)</option>
+              <option value="pemula">Pemula (banyak salah)</option>
+            </select>
+          </label>
+          <label class="rowLabel">Durasi (menit)<input type="number" id="sbDuration" min="1" max="30" value="5"></label>
+          <label class="rowLabel">Kecepatan Pemain
+            <input type="range" id="sbSpeed" min="0.5" max="2" step="0.1" value="1"> <span id="sbSpeedVal">1.0x</span>
+          </label>
+        </div>
       </div>
-      <div class="chip">
-        <span class="chipLabel">Rating Tim</span>
-        <span class="chipVal" id="hRating">0</span>
+      <div class="sbBtnRow">
+        <div class="btn ghost" id="sbBack">Kembali</div>
+        <div class="btn" id="sbStart">Lanjut ke Lineup</div>
       </div>
     </div>
-    <div class="btn primary" id="nextWeekBtn">Minggu Berikutnya ▶</div>
-  </header>
+  </div>
 
-  <nav id="tabbar">
-    <button class="tabBtn active" data-tab="dashboard">Dashboard</button>
-    <button class="tabBtn" data-tab="squad">Skuad</button>
-    <button class="tabBtn" data-tab="market">Transfer</button>
-    <button class="tabBtn" data-tab="fbg">FBG Cup</button>
-    <button class="tabBtn" data-tab="facilities">Fasilitas</button>
-    <button class="tabBtn" data-tab="settings">Pengaturan</button>
-  </nav>
-
-  <main id="content">
-
-    <section id="tab-dashboard" class="tabPane active">
-      <div class="grid2">
-        <div class="glassCard">
-          <h2>Ringkasan Klub</h2>
-          <div id="dashSummary" class="summaryList"></div>
+  <!-- LINEUP / KARTU PEMAIN -->
+  <div id="lineupOverlay" class="overlay hidden">
+    <div class="card cardWide scrollable">
+      <h1>Line-up</h1>
+      <p class="lead">Kartu skill tiap pemain (50-200). Cek dulu susunan sebelum kick-off.</p>
+      <div class="lineupGrid">
+        <div>
+          <h3 class="teamB">Tim Biru</h3>
+          <div id="lineupBlue" class="cardGrid"></div>
         </div>
-        <div class="glassCard">
-          <h2>Papan Berita</h2>
-          <div id="newsFeed" class="newsFeed"></div>
+        <div>
+          <h3 class="teamR">Tim Merah</h3>
+          <div id="lineupRed" class="cardGrid"></div>
         </div>
       </div>
-    </section>
-
-    <section id="tab-squad" class="tabPane">
-      <div class="glassCard">
-        <div class="sectionHead">
-          <h2>Skuad (<span id="squadCount">0</span>/26)</h2>
-          <div class="filterRow" id="squadFilter">
-            <button class="chipBtn active" data-pos="ALL">Semua</button>
-            <button class="chipBtn" data-pos="GK">GK</button>
-            <button class="chipBtn" data-pos="DF">DF</button>
-            <button class="chipBtn" data-pos="MF">MF</button>
-            <button class="chipBtn" data-pos="FW">FW</button>
-          </div>
-        </div>
-        <div id="squadList" class="cardList"></div>
+      <div class="sbBtnRow">
+        <div class="btn ghost" id="lineupBack">Kembali</div>
+        <div class="btn" id="lineupStart">Kick Off!</div>
       </div>
-    </section>
+    </div>
+  </div>
 
-    <section id="tab-market" class="tabPane">
-      <div class="glassCard">
-        <div class="sectionHead">
-          <h2>Pasar Transfer</h2>
-          <div class="btn ghost" id="refreshMarketBtn">Refresh Pasar (Rp<span id="refreshCost">0</span>)</div>
-        </div>
-        <p class="tiny">Level Jaringan Scouting menentukan kualitas pemain yang muncul di pasar.</p>
-        <div id="marketList" class="cardList"></div>
-      </div>
-    </section>
+  <!-- END MATCH -->
+  <div id="endOverlay" class="overlay hidden">
+    <div class="card">
+      <h1>Pertandingan Selesai</h1>
+      <div class="bigscore" id="finalScoreLine">0 - 0</div>
+      <div class="resulttag" id="resultTag">SERI</div>
+      <div class="statsBox" id="statsBox"></div>
+      <div class="btn" id="retryBtn">Pilih Mode Lagi</div>
+    </div>
+  </div>
 
-    <section id="tab-fbg" class="tabPane">
-      <div class="glassCard">
-        <h2>FBG Cup — Federation Ball Games</h2>
-        <div id="fbgStatus" class="fbgStatus"></div>
-        <div id="fbgStandings" class="standingsWrap"></div>
-        <div id="fbgFixtures" class="fixturesWrap"></div>
-      </div>
-    </section>
-
-    <section id="tab-facilities" class="tabPane">
-      <div class="glassCard">
-        <h2>Fasilitas & Staf</h2>
-        <div id="facilitiesList" class="facilitiesGrid"></div>
-      </div>
-    </section>
-
-    <section id="tab-settings" class="tabPane">
-      <div class="glassCard">
-        <h2>Pengaturan</h2>
-        <p class="lead">Reset akan menghapus seluruh progres klub secara permanen dari localStorage perangkat ini.</p>
-        <div class="btn danger" id="resetBtn">Reset Total Progres</div>
-      </div>
-    </section>
-
-  </main>
 </div>
-
-<div id="toast"></div>
-
-<script src="data.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
