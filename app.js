@@ -1,656 +1,853 @@
-// ============================================================
-// Ball Team Tycoon — app.js
-// State, ekonomi mingguan, transfer, latihan, FBG Cup, rendering.
-// ============================================================
 (function(){
   'use strict';
-  var D = window.BTT_DATA;
-  var state = null;
-  var currentSquadFilter = 'ALL';
-  var toastTimer = null;
 
-  // ---------- DOM refs ----------
-  var onboardOverlay = document.getElementById('onboardOverlay');
-  var appEl = document.getElementById('app');
-  var clubNameInput = document.getElementById('clubNameInput');
-  var startClubBtn = document.getElementById('startClubBtn');
-
-  var hClubName = document.getElementById('hClubName');
-  var hSeasonWeek = document.getElementById('hSeasonWeek');
-  var hBudget = document.getElementById('hBudget');
-  var hReputation = document.getElementById('hReputation');
-  var hRating = document.getElementById('hRating');
-  var nextWeekBtn = document.getElementById('nextWeekBtn');
-
-  var dashSummary = document.getElementById('dashSummary');
-  var newsFeed = document.getElementById('newsFeed');
-
-  var squadCount = document.getElementById('squadCount');
-  var squadList = document.getElementById('squadList');
-  var squadFilter = document.getElementById('squadFilter');
-
-  var marketList = document.getElementById('marketList');
-  var refreshCost = document.getElementById('refreshCost');
-  var refreshMarketBtn = document.getElementById('refreshMarketBtn');
-
-  var fbgStatus = document.getElementById('fbgStatus');
-  var fbgStandings = document.getElementById('fbgStandings');
-  var fbgFixtures = document.getElementById('fbgFixtures');
-
-  var facilitiesList = document.getElementById('facilitiesList');
-  var resetBtn = document.getElementById('resetBtn');
-  var toastEl = document.getElementById('toast');
-
-  // ---------- Helpers ----------
-  function fmtMoney(n){
-    var neg = n < 0;
-    n = Math.abs(Math.round(n));
-    var s = 'Rp' + n.toLocaleString('id-ID');
-    return neg ? '-' + s : s;
-  }
-  function toast(msg){
-    toastEl.textContent = msg;
-    toastEl.classList.add('show');
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(function(){ toastEl.classList.remove('show'); }, 2400);
-  }
-  function save(){ D.saveState(state); }
-  function addNews(text, type){
-    state.newsLog.unshift({ week: state.week, text: text, type: type || null });
-    if(state.newsLog.length > 60) state.newsLog.length = 60;
-  }
-  function findTeam(comp, name){
-    for(var i=0;i<comp.teams.length;i++) if(comp.teams[i].name === name) return comp.teams[i];
-    return null;
-  }
-  function facilitiesUpkeep(){
-    var f = state.facilities;
-    return (f.stadium + f.training + f.medical + f.scouting) * 80;
-  }
-  function totalWages(){
-    return state.squad.reduce(function(s,p){ return s + p.wage; }, 0);
-  }
-
-  // ================= Club lifecycle =================
-  function newClub(name){
-    state = {
-      clubName: name || 'Klub Baru',
-      budget: 60000,
-      reputation: 40,
-      week: 1,
-      seasonNumber: 1,
-      facilities: { stadium:1, training:1, medical:1, scouting:1 },
-      squad: D.makeStarterSquad(),
-      market: D.generateMarket(1, 8),
-      marketWeek: 1,
-      competition: { stage: 'none' },
-      newsLog: []
-    };
-    addNews('Klub ' + state.clubName + ' resmi didirikan dengan modal awal ' + fmtMoney(60000) + '.', 'good');
-    save();
-    showApp();
-    renderAll();
-  }
-
-  function showApp(){
-    onboardOverlay.classList.add('hidden');
-    appEl.classList.remove('hidden');
-  }
-
-  function boot(){
-    var saved = D.loadState();
-    if(saved){
-      state = saved;
-      if(!state.competition) state.competition = { stage:'none' };
-      showApp();
-      renderAll();
+  // ================= Fallback config (dipakai kalau fetch config.json gagal, misal dibuka via file://) =================
+  var DEFAULT_CONFIG = {
+    names: {
+      idFirst: ["Andi","Budi","Rizky","Fajar","Dimas","Bagus","Yusuf","Fadli","Reza","Arya"],
+      idLast: ["Saputra","Pratama","Wijaya","Kusuma","Nugroho","Santoso","Setiawan","Hidayat"],
+      intlFirst: ["Marco","Luca","Carlos","Diego","Pierre","Lucas","Kevin","Erik","Andres"],
+      intlLast: ["Silva","Fernandez","Rossi","Novak","Schmidt","Dubois","Andersson","Kowalski"]
+    },
+    skillScale: { min:50, max:200, userDefault:190 },
+    gradeTiers: [
+      { max:75, label:'Pemula', color:'#9aa6c8' },
+      { max:105, label:'Biasa', color:'#7de1ff' },
+      { max:140, label:'Bagus', color:'#c6ff8f' },
+      { max:175, label:'Hebat', color:'#ffd479' },
+      { max:200, label:'Legendaris', color:'#ff9ad1' }
+    ],
+    squadDefault: { blue:{GK:1,DF:2,MF:2,FW:1}, red:{GK:1,DF:2,MF:2,FW:2} },
+    match: { fieldWidth:960, fieldHeight:600, goalHeight:170, playerRadius:14, ballRadius:8, possessionRadius:24, stealRadius:20, userSpeed:175, aiBaseSpeed:150, shootPower:430, shootRange:300, defaultSeconds:300 },
+    modes: {
+      latihan:{ label:'LATIHAN', skillMin:50, skillMax:75, offside:false, fouls:false, referee:'pemula', seconds:300, speedMultiplier:1.0 },
+      easy:{ label:'EASY', skillMin:75, skillMax:105, offside:true, fouls:true, referee:'pemula', seconds:300, speedMultiplier:1.0 },
+      normal:{ label:'NORMAL', skillMin:105, skillMax:140, offside:true, fouls:true, referee:'adil', seconds:300, speedMultiplier:1.0 },
+      hard:{ label:'SUSAH', skillMin:140, skillMax:195, offside:true, fouls:true, referee:'pro', seconds:300, speedMultiplier:1.08 }
+    },
+    refereeProfiles: {
+      adil:{ foulMult:1.0, offsideAcc:0.95, cardMult:1.0, biased:false, noisy:false },
+      tidak_adil:{ foulMult:1.0, offsideAcc:0.85, cardMult:1.0, biased:true, noisy:false },
+      pro:{ foulMult:1.15, offsideAcc:0.99, cardMult:1.15, biased:false, noisy:false },
+      pemula:{ foulMult:0.55, offsideAcc:0.55, cardMult:0.7, biased:false, noisy:true }
     }
+  };
+
+  var CFG = null;
+
+  function loadConfig(cb){
+    fetch('config.json').then(function(r){
+      if(!r.ok) throw new Error('bad status');
+      return r.json();
+    }).then(function(json){
+      CFG = json;
+      cb();
+    }).catch(function(){
+      CFG = DEFAULT_CONFIG;
+      cb();
+    });
   }
 
-  // ================= Weekly economy tick =================
-  function processWeek(){
-    if(!state) return;
+  // ================= DOM refs =================
+  var canvas, ctx;
+  var scoreBlueEl, scoreRedEl, timePillEl, modePillEl, centerFlash;
+  var modeOverlay, sandboxOverlay, lineupOverlay, endOverlay;
+  var retryBtn, finalScoreLine, resultTag, statsBox;
+  var controlsEl, hintEl, cyB, crB, cyR, crR;
+  var lineupBlueEl, lineupRedEl;
 
-    var wages = totalWages();
-    var upkeep = facilitiesUpkeep();
-    var ticket = Math.round(state.facilities.stadium * 1200 * (0.5 + state.reputation/200) * D.rand(0.85,1.15));
-    var sponsorBase = Math.round(3000 + state.reputation * 20);
-    var income = ticket + sponsorBase;
-    state.budget += income - wages - upkeep;
+  function grabDom(){
+    canvas = document.getElementById('field');
+    ctx = canvas.getContext('2d');
+    scoreBlueEl = document.getElementById('scoreBlue');
+    scoreRedEl = document.getElementById('scoreRed');
+    timePillEl = document.getElementById('timePill');
+    modePillEl = document.getElementById('modePill');
+    centerFlash = document.getElementById('centerFlash');
+    modeOverlay = document.getElementById('modeOverlay');
+    sandboxOverlay = document.getElementById('sandboxOverlay');
+    lineupOverlay = document.getElementById('lineupOverlay');
+    endOverlay = document.getElementById('endOverlay');
+    retryBtn = document.getElementById('retryBtn');
+    finalScoreLine = document.getElementById('finalScoreLine');
+    resultTag = document.getElementById('resultTag');
+    statsBox = document.getElementById('statsBox');
+    controlsEl = document.getElementById('controls');
+    hintEl = document.getElementById('hint');
+    cyB = document.getElementById('cyB'); crB = document.getElementById('crB');
+    cyR = document.getElementById('cyR'); crR = document.getElementById('crR');
+    lineupBlueEl = document.getElementById('lineupBlue');
+    lineupRedEl = document.getElementById('lineupRed');
+  }
 
-    addNews('Pemasukan tiket & sponsor +' + fmtMoney(income) + ', gaji & operasional -' + fmtMoney(wages+upkeep) + '.');
+  // ================= Utility =================
+  function rand(a,b){ return Math.random()*(b-a)+a; }
+  function randInt(a,b){ return Math.floor(rand(a,b+1)); }
+  function clamp(v,a,b){ return Math.max(a, Math.min(b,v)); }
+  function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+  function normVec(dx,dy){
+    var len = Math.sqrt(dx*dx+dy*dy);
+    if(len < 0.0001) return {x:0,y:0};
+    return {x:dx/len, y:dy/len};
+  }
+  function fmtTime(t){
+    t = Math.max(0, Math.ceil(t));
+    var m = Math.floor(t/60), s = t%60;
+    return (m<10?'0':'')+m+':'+(s<10?'0':'')+s;
+  }
+  function skillToMultiplier(score){
+    var lo = CFG.skillScale.min, hi = CFG.skillScale.max;
+    var t = clamp((score-lo)/(hi-lo), 0, 1);
+    return 0.5 + t*1.0; // 50 -> 0.5x, 200 -> 1.5x
+  }
+  function gradeFor(score){
+    var tiers = CFG.gradeTiers;
+    for(var i=0;i<tiers.length;i++) if(score <= tiers[i].max) return tiers[i];
+    return tiers[tiers.length-1];
+  }
+  function generatePlayerName(){
+    var isIndo = Math.random() < 0.55;
+    if(isIndo) return { name: pick(CFG.names.idFirst)+' '+pick(CFG.names.idLast), origin:'id' };
+    return { name: pick(CFG.names.intlFirst)+' '+pick(CFG.names.intlLast), origin:'intl' };
+  }
 
-    if(Math.random() < 0.15){
-      var bonus = D.randInt(300,1400);
-      state.budget += bonus;
-      addNews('Sponsor memberikan bonus spesial +' + fmtMoney(bonus) + '!', 'good');
-    }
+  // ================= SVG icons =================
+  var SVG = {
+    yellow: '<svg width="30" height="42" viewBox="0 0 30 42"><rect x="1" y="1" width="28" height="40" rx="4" fill="#ffd400" stroke="rgba(0,0,0,0.35)" stroke-width="2"/></svg>',
+    red: '<svg width="30" height="42" viewBox="0 0 30 42"><rect x="1" y="1" width="28" height="40" rx="4" fill="#ff3b3b" stroke="rgba(0,0,0,0.35)" stroke-width="2"/></svg>',
+    whistle: '<svg width="46" height="34" viewBox="0 0 46 34"><circle cx="14" cy="17" r="13" fill="none" stroke="#fff" stroke-width="3"/><rect x="24" y="13" width="18" height="8" rx="4" fill="#fff"/><circle cx="14" cy="17" r="4" fill="#fff"/></svg>',
+    flag: '<svg width="30" height="40" viewBox="0 0 30 40"><rect x="13" y="2" width="3" height="36" fill="#eee"/><path d="M16 4 L29 9 L16 14 Z" fill="#ffd400"/></svg>',
+    ball: '<svg width="34" height="34" viewBox="0 0 34 34"><circle cx="17" cy="17" r="15" fill="#fff" stroke="rgba(0,0,0,0.4)" stroke-width="2"/><polygon points="17,9 22,13 20,19 14,19 12,13" fill="#222"/></svg>'
+  };
+  function flash(title, sub, icon){
+    var html = '';
+    if(icon) html += '<div>'+icon+'</div>';
+    html += '<div class="flashTitle">'+title+'</div>';
+    if(sub) html += '<div class="flashSub">'+sub+'</div>';
+    centerFlash.innerHTML = html;
+    centerFlash.classList.remove('show');
+    void centerFlash.offsetWidth;
+    centerFlash.classList.add('show');
+  }
 
-    var medLvl = state.facilities.medical;
-    state.squad.forEach(function(p){
-      if(p.injuredWeeks > 0){
-        p.injuredWeeks--;
-        p.fitness = D.clamp(p.fitness + 15 + (medLvl-1)*3, 0, 100);
-      } else {
-        p.fitness = D.clamp(p.fitness + 5, 0, 100);
-        var injuryChance = 0.03 * (1 - (medLvl-1)*0.15);
-        if(Math.random() < injuryChance){
-          p.injuredWeeks = D.randInt(1,4);
-          p.fitness = D.clamp(p.fitness - 40, 10, 100);
-          addNews(p.name + ' mengalami cedera, absen ' + p.injuredWeeks + ' minggu.', 'bad');
+  // ================= Field constants (filled from config on init) =================
+  var FW, FH, GOAL_HEIGHT, GOAL_TOP, GOAL_BOTTOM, PLAYER_R, BALL_R, POSSESSION_R, STEAL_R;
+  var ROLE_ADV = { GK:0.05, DF:0.22, MF:0.48, FW:0.72 };
+  var ROLE_SUPPORT_DIST = { DF:80, MF:150, FW:190 };
+
+  var dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+  function resize(){
+    var maxW = window.innerWidth - 20;
+    var maxH = window.innerHeight - 150;
+    var stw = FW + 260, sth = FH + 210;
+    var scale = Math.min(maxW/stw, maxH/sth);
+    if(scale <= 0 || !isFinite(scale)) scale = 0.5;
+    canvas.style.width = (stw*scale)+'px';
+    canvas.style.height = (sth*scale)+'px';
+    canvas.width = Math.round(stw*dpr);
+    canvas.height = Math.round(sth*dpr);
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    STW = stw; STH = sth;
+  }
+  var STW, STH, MARGIN_X, MARGIN_Y;
+
+  // ================= Referee =================
+  var referee = { type:'adil', favoredTeam:null, profile:null, pos:null };
+  function setupReferee(type){
+    referee.type = type;
+    referee.profile = CFG.refereeProfiles[type] || CFG.refereeProfiles.adil;
+    referee.favoredTeam = (type === 'tidak_adil') ? (Math.random()<0.5?'blue':'red') : null;
+    referee.pos = { x: FW/2, y: FH/2 };
+  }
+
+  // ================= Crowd =================
+  var crowd = [];
+  function buildCrowd(){
+    crowd = [];
+    var spacing = 22;
+    function fillBand(x0,y0,x1,y1){
+      for(var y=y0; y<y1; y+=spacing){
+        for(var x=x0; x<x1; x+=spacing){
+          var jx = x + rand(-4,4);
+          var jy = y + rand(-4,4);
+          if(Math.random() < 0.12) continue;
+          crowd.push({ x:jx, y:jy, faction: jx<STW/2?'blue':'red', phase:rand(0,Math.PI*2), speed:rand(1.6,2.6), tone:rand(0.75,1.15) });
         }
       }
-      p.trainedThisWeek = false;
-      p.contractWeeks--;
-      if(p.contractWeeks <= 0){
-        p.contractWeeks = D.randInt(20,52);
-        p.wage = Math.round(p.wage * D.rand(1.03,1.12) / 10) * 10;
-        addNews('Kontrak ' + p.name + ' diperpanjang otomatis, gaji naik jadi Rp' + p.wage.toLocaleString('id-ID') + '/mg.');
-      }
+    }
+    fillBand(0, 6, STW, MARGIN_Y-12);
+    fillBand(0, STH-MARGIN_Y+12, STW, STH-6);
+    fillBand(6, MARGIN_Y, MARGIN_X-12, STH-MARGIN_Y);
+    fillBand(STW-MARGIN_X+12, MARGIN_Y, STW-6, STH-MARGIN_Y);
+  }
+  var crowdMood = { blue:{state:'idle',timer:0}, red:{state:'idle',timer:0} };
+  function setCrowdMood(team,state,dur){ crowdMood[team].state=state; crowdMood[team].timer=dur; }
+  function updateCrowdMood(dt){
+    ['blue','red'].forEach(function(t){
+      if(crowdMood[t].timer>0){ crowdMood[t].timer -= dt; if(crowdMood[t].timer<=0) crowdMood[t].state='idle'; }
     });
-
-    state.week++;
-
-    var comp = state.competition;
-    if(comp && ['kualifikasi','grup','semifinal','final'].indexOf(comp.stage) !== -1){
-      playMatchdayFixtures();
+  }
+  function drawCrowd(t){
+    for(var i=0;i<crowd.length;i++){
+      var c = crowd[i];
+      var mood = crowdMood[c.faction];
+      var amp, colorBase, yOff;
+      if(mood.state==='cheer'){ amp=6; colorBase=c.faction==='blue'?[125,225,255]:[255,107,107]; yOff=-2; }
+      else if(mood.state==='sad'){ amp=1; colorBase=c.faction==='blue'?[60,80,110]:[110,60,60]; yOff=3; }
+      else { amp=2.5; colorBase=c.faction==='blue'?[90,140,190]:[190,100,95]; yOff=0; }
+      var bounce = Math.sin(t*c.speed+c.phase)*amp;
+      var r=Math.round(colorBase[0]*c.tone), g=Math.round(colorBase[1]*c.tone), b=Math.round(colorBase[2]*c.tone);
+      ctx.fillStyle = 'rgb('+r+','+g+','+b+')';
+      ctx.fillRect(c.x-2, c.y+yOff+bounce-2, 4, 5);
     }
-
-    if(state.budget < -8000){
-      addNews('PERINGATAN: Keuangan klub kritis! Jual pemain atau kurangi latihan.', 'bad');
-    }
-
-    save();
-    renderAll();
   }
 
-  // ================= Training =================
-  function trainPlayer(id){
-    var p = state.squad.filter(function(x){ return x.id === id; })[0];
-    if(!p) return;
-    if(p.injuredWeeks > 0){ toast(p.name + ' sedang cedera, tidak bisa latihan.'); return; }
-    if(p.trainedThisWeek){ toast(p.name + ' sudah latihan minggu ini.'); return; }
-    var cost = D.trainingCostForStar(p.star, state.facilities.training);
-    if(state.budget < cost){ toast('Kas tidak cukup untuk latihan ini.'); return; }
+  // ================= Match config & squads =================
+  var matchConfig = null;
+  var players = [];
+  var ball = { x:0,y:0, vx:0,vy:0, controller:null, freeTimer:0, offsideFlag:null };
+  var scoreBlue=0, scoreRed=0;
+  var stats = { blueYellow:0, blueRed:0, redYellow:0, redRed:0 };
+  var matchTime = 300;
+  var phase = 'idle';
+  var phaseTimer = 0;
+  var lastFrameTs = null;
+  var rafId = null;
+  var keys = { up:false, down:false, left:false, right:false, shoot:false };
 
-    state.budget -= cost;
-    var ageFactor = p.age < 23 ? 1.2 : (p.age > 29 ? 0.8 : 1.0);
-    var inc = D.rand(0.05,0.35) * (1 + (state.facilities.training-1)*0.15) * ageFactor;
-    p.star = D.clamp(Math.round((p.star+inc)*10)/10, 1, 10);
-    p.morale = D.clamp(p.morale+3, 0, 100);
-    p.trainedThisWeek = true;
-    p.wage = D.wageForStar(p.star, p.position);
-
-    addNews('Sesi latihan ' + p.name + ': rating bintang naik jadi ' + p.star.toFixed(1) + '.');
-    save();
-    renderAll();
-  }
-
-  // ================= Transfer market =================
-  function refreshMarket(){
-    var cost = 200 + state.facilities.scouting*100;
-    if(state.budget < cost){ toast('Kas tidak cukup untuk refresh pasar.'); return; }
-    state.budget -= cost;
-    state.market = D.generateMarket(state.facilities.scouting, 8);
-    state.marketWeek = state.week;
-    addNews('Tim scouting menyegarkan pasar transfer (-' + fmtMoney(cost) + ').');
-    save();
-    renderAll();
-  }
-
-  function buyPlayer(id){
-    var p = state.market.filter(function(x){ return x.id === id; })[0];
-    if(!p) return;
-    if(state.squad.length >= 26){ toast('Skuad sudah penuh (maks 26 pemain).'); return; }
-    if(state.budget < p.cost){ toast('Kas tidak cukup untuk merekrut pemain ini.'); return; }
-    state.budget -= p.cost;
-    var cost = p.cost;
-    delete p.cost;
-    p.isUserOwned = true;
-    p.trainedThisWeek = false;
-    state.squad.push(p);
-    state.market = state.market.filter(function(x){ return x.id !== id; });
-    addNews('Merekrut ' + p.name + ' (' + p.position + ', ' + p.star.toFixed(1) + '★) seharga ' + fmtMoney(cost) + '.', 'good');
-    save();
-    renderAll();
-  }
-
-  function sellPlayer(id){
-    var p = state.squad.filter(function(x){ return x.id === id; })[0];
-    if(!p) return;
-    var value = Math.round(D.transferCostForStar(p.star, p.position, p.age) * 0.55);
-    state.budget += value;
-    state.squad = state.squad.filter(function(x){ return x.id !== id; });
-    addNews('Menjual ' + p.name + ' seharga ' + fmtMoney(value) + '.', 'good');
-    save();
-    renderAll();
-  }
-
-  // ================= Facilities =================
-  function facilityMeta(key){
-    var map = {
-      stadium:{ label:'Stadion', desc:'Meningkatkan kapasitas & pemasukan tiket mingguan.' },
-      training:{ label:'Pusat Latihan', desc:'Meningkatkan efektivitas & menurunkan biaya latihan pemain.' },
-      medical:{ label:'Pusat Medis', desc:'Menurunkan risiko cedera & mempercepat pemulihan pemain.' },
-      scouting:{ label:'Jaringan Scouting', desc:'Meningkatkan kualitas pemain yang muncul di pasar transfer.' }
-    };
-    return map[key];
-  }
-  function upgradeFacility(key){
-    var lvl = state.facilities[key];
-    if(lvl >= 5){ toast('Fasilitas ini sudah level maksimum.'); return; }
-    var cost = lvl*1500 + 1000;
-    if(state.budget < cost){ toast('Kas tidak cukup untuk upgrade ini.'); return; }
-    state.budget -= cost;
-    state.facilities[key] = lvl+1;
-    addNews(facilityMeta(key).label + ' naik ke level ' + (lvl+1) + '! (-' + fmtMoney(cost) + ')', 'good');
-    save();
-    renderAll();
-  }
-
-  // ================= FBG Cup competition =================
-  function prizeForStage(stage, kind){
-    var table = {
-      kualifikasi:{ win:500, draw:150 },
-      grup:{ win:900, draw:250 },
-      semifinal:{ win:2000, draw:0 },
-      final:{ win:8000, draw:0 }
-    };
-    return (table[stage] && table[stage][kind]) || 0;
-  }
-
-  function createGroupStage(stageLabel, ratingRangeMin, ratingRangeMax){
-    var userRating = D.squadOverall(state.squad);
-    var teams = [{ name: state.clubName, isUser:true, rating:userRating, pts:0,w:0,d:0,l:0,gf:0,ga:0 }];
-    var used = {}; used[state.clubName] = true;
-    for(var i=0;i<3;i++){
-      var nm = D.generateRivalName(used);
-      used[nm] = true;
-      var r = D.clamp(userRating + D.rand(ratingRangeMin, ratingRangeMax), 30, 99);
-      teams.push({ name:nm, isUser:false, rating:Math.round(r), pts:0,w:0,d:0,l:0,gf:0,ga:0 });
-    }
-    var schedule = [ [[0,1],[2,3]], [[0,2],[3,1]], [[0,3],[1,2]] ];
-    var fixtures = [];
-    schedule.forEach(function(md, mi){
-      md.forEach(function(pair){
-        fixtures.push({ matchday: mi+1, home:teams[pair[0]].name, away:teams[pair[1]].name, played:false, gh:null, ga:null });
+  function buildSquad(){
+    players = [];
+    var teams = [
+      { team:'blue', attackDir:1, ownGoalX:0, cfg:matchConfig.squad.blue, extraUser:true },
+      { team:'red', attackDir:-1, ownGoalX:FW, cfg:matchConfig.squad.red, extraUser:false }
+    ];
+    teams.forEach(function(T){
+      var roles = ['GK','DF','MF','FW'];
+      var counts = { GK:T.cfg.GK||0, DF:T.cfg.DF||0, MF:T.cfg.MF||0, FW:T.cfg.FW||0 };
+      roles.forEach(function(role){
+        var n = counts[role] + (T.extraUser && role==='FW' ? 1 : 0);
+        if(n <= 0) return;
+        var placedUser = false;
+        for(var i=0;i<n;i++){
+          var isUserSlot = false;
+          if(T.extraUser && role==='FW' && !placedUser && i===Math.floor(n/2)){ isUserSlot=true; placedUser=true; }
+          var x = T.ownGoalX + T.attackDir*ROLE_ADV[role]*FW;
+          var y;
+          if(role==='GK') y = GOAL_TOP + (GOAL_BOTTOM-GOAL_TOP)*((i+1)/(n+1));
+          else y = 40 + (FH-80)*((i+1)/(n+1));
+          var skillScore = isUserSlot ? CFG.skillScale.userDefault : Math.round(rand(matchConfig.skillMin, matchConfig.skillMax));
+          var g = generatePlayerName();
+          players.push({
+            team:T.team, role:role, isUser:isUserSlot,
+            name:g.name, origin:g.origin,
+            x:x, y:y, baseX:x, baseY:y,
+            facing:{x:T.attackDir,y:0},
+            skillScore: skillScore,
+            skill: skillToMultiplier(skillScore),
+            actionCooldown:0, shotTimer:rand(0.3,0.8),
+            yellowCards:0, sentOff:false,
+            color: T.team==='blue' ? (isUserSlot?'#7de1ff':(role==='GK'?'#ffd479':'#3fa8e0')) : (isUserSlot?'#ff6b6b':(role==='GK'?'#ffd479':'#e0483f'))
+          });
+        }
       });
     });
-    state.competition = { stage: stageLabel, teams: teams, fixtures: fixtures, matchdayPointer: 1 };
   }
 
-  function setupKnockout(stage){
-    var userRating = D.squadOverall(state.squad);
-    var oppRating = D.clamp(userRating + D.rand(0,16), 30, 99);
-    var oppName = D.generateRivalName({});
-    state.competition = {
-      stage: stage,
-      teams: [
-        { name: state.clubName, isUser:true, rating:userRating, pts:0,w:0,d:0,l:0,gf:0,ga:0 },
-        { name: oppName, isUser:false, rating:Math.round(oppRating), pts:0,w:0,d:0,l:0,gf:0,ga:0 }
-      ],
-      fixtures: [{ matchday:1, home: state.clubName, away: oppName, played:false, gh:null, ga:null }],
-      matchdayPointer: 1
-    };
+  function resetPositionsSoft(){
+    players.forEach(function(p){ if(p.sentOff) return; p.x=p.baseX; p.y=p.baseY; p.actionCooldown=0; });
+    ball.x=FW/2; ball.y=FH/2; ball.vx=0; ball.vy=0; ball.controller=null; ball.freeTimer=0; ball.offsideFlag=null;
+  }
+  function placeBallAt(x,y){
+    ball.x = clamp(x, BALL_R+2, FW-BALL_R-2);
+    ball.y = clamp(y, BALL_R+2, FH-BALL_R-2);
+    ball.vx=0; ball.vy=0; ball.controller=null; ball.freeTimer=0.35; ball.offsideFlag=null;
+  }
+  function getUser(){ for(var i=0;i<players.length;i++) if(players[i].isUser) return players[i]; return null; }
+  function nearestOfTeam(team,x,y){
+    var best=null, bestD=Infinity;
+    for(var i=0;i<players.length;i++){
+      var p=players[i]; if(p.team!==team || p.sentOff) continue;
+      var d = Math.sqrt((p.x-x)*(p.x-x)+(p.y-y)*(p.y-y));
+      if(d<bestD){ bestD=d; best=p; }
+    }
+    return best;
   }
 
-  function simulateMatch(ratingHome, ratingAway){
-    var diff = ratingHome - ratingAway;
-    var expHome = D.clamp(1.3 + diff*0.045, 0.2, 4.5);
-    var expAway = D.clamp(1.3 - diff*0.045, 0.2, 4.5);
-    var gh = Math.max(0, Math.round(expHome + D.rand(-1,1.3)));
-    var ga = Math.max(0, Math.round(expAway + D.rand(-1,1.3)));
-    return { gh:gh, ga:ga };
+  // ================= Offside =================
+  function checkOffsideOnKick(p){
+    if(!matchConfig.offside) return;
+    var attackDir = p.team==='blue'?1:-1;
+    var opponents = players.filter(function(q){ return q.team!==p.team && !q.sentOff; });
+    if(opponents.length<1) return;
+    var advVals = opponents.map(function(q){ return q.x*attackDir; }).sort(function(a,b){ return b-a; });
+    var line = advVals.length>1 ? advVals[1] : advVals[0];
+    var ballAdv = ball.x*attackDir;
+    var flagged = [];
+    players.forEach(function(q){
+      if(q.team!==p.team || q===p || q.sentOff) return;
+      var qAdv = q.x*attackDir;
+      if(qAdv>line && qAdv>ballAdv) flagged.push(q);
+    });
+    ball.offsideFlag = flagged.length>0 ? { team:p.team, players:flagged, spotX:p.x, spotY:p.y } : null;
+  }
+  function resolveOffsideIfNeeded(newController){
+    if(!ball.offsideFlag) return false;
+    var flag = ball.offsideFlag;
+    ball.offsideFlag = null;
+    if(!newController || newController.team!==flag.team) return false;
+    if(flag.players.indexOf(newController)===-1) return false;
+
+    var acc = referee.profile.offsideAcc;
+    if(referee.profile.biased) acc = (flag.team===referee.favoredTeam) ? acc*0.3 : Math.min(0.98, acc*1.3);
+    if(referee.profile.noisy) acc *= rand(0.6,1.2);
+    if(Math.random() > acc) return false;
+
+    var otherTeam = flag.team==='blue' ? 'red' : 'blue';
+    triggerStoppage('offside', otherTeam, flag.spotX, flag.spotY);
+    return true;
   }
 
-  function playMatchdayFixtures(){
-    var comp = state.competition;
-    if(!comp || comp.stage === 'none') return;
-    var due = comp.fixtures.filter(function(f){ return !f.played && f.matchday === comp.matchdayPointer; });
-    if(due.length === 0) return;
+  // ================= Shooting =================
+  function doShoot(p, targetX, targetY, power){
+    var spread = (1 - p.skill/1.5) * 0.5;
+    var baseAngle = Math.atan2(targetY-p.y, targetX-p.x);
+    var angle = baseAngle + rand(-spread, spread);
+    var pw = power || CFG.match.shootPower;
+    ball.vx = Math.cos(angle)*pw;
+    ball.vy = Math.sin(angle)*pw;
+    ball.controller = null;
+    ball.freeTimer = 0.28;
+    checkOffsideOnKick(p);
+  }
 
-    var knockout = (comp.stage === 'semifinal' || comp.stage === 'final');
+  // ================= Fouls / cards =================
+  function handleCard(q, severity){
+    var mult = referee.profile.cardMult;
+    if(referee.profile.biased) mult *= (q.team===referee.favoredTeam) ? 0.5 : 1.4;
+    if(referee.profile.noisy) mult *= rand(0.5,1.3);
+    var sev = severity*mult;
+    if(sev > 0.88){ sendOff(q); return 'red'; }
+    else if(sev > 0.55){
+      q.yellowCards++;
+      if(q.team==='blue') stats.blueYellow++; else stats.redYellow++;
+      if(q.yellowCards>=2){ sendOff(q); return 'red2'; }
+      return 'yellow';
+    }
+    return null;
+  }
+  function sendOff(q){
+    q.sentOff = true;
+    if(q.team==='blue') stats.blueRed++; else stats.redRed++;
+    var idx = players.indexOf(q);
+    if(idx!==-1) players.splice(idx,1);
+  }
+  function triggerStoppage(kind, possessionTeam, x, y){
+    phase = 'stoppage'; phaseTimer = 1.6;
+    placeBallAt(x,y);
+    if(kind==='offside') flash('OFFSIDE!', 'Bola untuk '+(possessionTeam==='blue'?'Tim Biru':'Tim Merah'), SVG.flag);
+    else if(kind==='foul') flash('PELANGGARAN!', 'Bola untuk '+(possessionTeam==='blue'?'Tim Biru':'Tim Merah'), SVG.whistle);
+  }
 
-    due.forEach(function(f){
-      var homeTeam = findTeam(comp, f.home), awayTeam = findTeam(comp, f.away);
-      var hRating = homeTeam.isUser ? D.squadOverall(state.squad) : homeTeam.rating;
-      var aRating = awayTeam.isUser ? D.squadOverall(state.squad) : awayTeam.rating;
-      var res = simulateMatch(hRating, aRating);
+  // ================= Update user/AI =================
+  function updateUser(p, dt){
+    var dx=0,dy=0;
+    if(keys.up) dy-=1; if(keys.down) dy+=1; if(keys.left) dx-=1; if(keys.right) dx+=1;
+    var dir = normVec(dx,dy);
+    var speed = CFG.match.userSpeed * matchConfig.speedMultiplier;
+    if(dir.x!==0 || dir.y!==0){ p.facing=dir; p.x+=dir.x*speed*dt; p.y+=dir.y*speed*dt; }
+    p.x = clamp(p.x, PLAYER_R, FW-PLAYER_R);
+    p.y = clamp(p.y, PLAYER_R, FH-PLAYER_R);
+    if(keys.shoot && ball.controller===p && ball.freeTimer<=0){
+      doShoot(p, p.x+p.facing.x*999, p.y+p.facing.y*999, CFG.match.shootPower);
+      keys.shoot = false;
+    }
+  }
 
-      var penalties = false;
-      if(knockout && res.gh === res.ga){
-        penalties = true;
-        f.penWinnerIsHome = Math.random() < (hRating/(hRating+aRating));
+  function updateAIPlayer(p, dt){
+    var attackDir = p.team==='blue'?1:-1;
+    var ownGoalX = p.team==='blue'?0:FW;
+    var oppGoalX = p.team==='blue'?FW:0;
+    var goalY = FH/2;
+    var dir = {x:0,y:0};
+    var ctrl = ball.controller;
+    var speed = CFG.match.aiBaseSpeed * p.skill * matchConfig.speedMultiplier;
+
+    if(p.role==='GK'){
+      var gkX = ownGoalX + attackDir*45;
+      var trackY = clamp(ball.y, GOAL_TOP+15, GOAL_BOTTOM-15);
+      var ballDist = Math.sqrt((ball.x-p.x)*(ball.x-p.x)+(ball.y-p.y)*(ball.y-p.y));
+      if(ctrl===p){
+        var clearX = ownGoalX + attackDir*FW*0.5;
+        var clearY = FH/2 + rand(-90,90);
+        p.shotTimer -= dt;
+        if(p.shotTimer<=0){ doShoot(p, clearX, clearY, 380); p.shotTimer = rand(0.4,0.8); }
+        dir = {x:0,y:0};
+      } else if(ballDist<100 && (!ctrl||ctrl.team!==p.team)){
+        dir = normVec(ball.x-p.x, ball.y-p.y);
+      } else {
+        dir = normVec(gkX-p.x, trackY-p.y);
       }
-
-      f.gh = res.gh; f.ga = res.ga; f.played = true; f.penalties = penalties;
-
-      homeTeam.gf += res.gh; homeTeam.ga += res.ga;
-      awayTeam.gf += res.ga; awayTeam.ga += res.gh;
-      if(!knockout){
-        if(res.gh > res.ga){ homeTeam.w++; homeTeam.pts+=3; awayTeam.l++; }
-        else if(res.gh < res.ga){ awayTeam.w++; awayTeam.pts+=3; homeTeam.l++; }
-        else { homeTeam.d++; awayTeam.d++; homeTeam.pts++; awayTeam.pts++; }
+      speed *= 1.05;
+    } else {
+      var supportDist = ROLE_SUPPORT_DIST[p.role] || 150;
+      if(ctrl===p){
+        var tX=oppGoalX, tY=goalY;
+        dir = normVec(tX-p.x, tY-p.y);
+        var dGoal = Math.sqrt((p.x-oppGoalX)*(p.x-oppGoalX)+(p.y-goalY)*(p.y-goalY));
+        if(dGoal < CFG.match.shootRange){
+          p.shotTimer -= dt;
+          if(p.shotTimer<=0 && p.actionCooldown<=0){
+            doShoot(p, oppGoalX, goalY+rand(-30,30), CFG.match.shootPower*rand(0.85,1.05));
+            p.actionCooldown = 1.1; p.shotTimer = rand(0.5,1.0);
+          }
+        } else { p.shotTimer = rand(0.3,0.7); }
+      } else if(ctrl && ctrl.team===p.team){
+        var supportX = clamp(ctrl.x+attackDir*supportDist, PLAYER_R+10, FW-PLAYER_R-10);
+        var supportY = clamp(p.baseY+(ctrl.y>FH/2?-50:50), PLAYER_R+10, FH-PLAYER_R-10);
+        dir = normVec(supportX-p.x, supportY-p.y);
+      } else if(ctrl && ctrl.team!==p.team){
+        var defender = nearestOfTeam(p.team, ball.x, ball.y);
+        if(defender===p) dir = normVec(ball.x-p.x, ball.y-p.y);
+        else {
+          var markX = clamp(ownGoalX+attackDir*170, PLAYER_R+10, FW-PLAYER_R-10);
+          dir = normVec(markX-p.x, p.baseY-p.y);
+        }
+      } else {
+        var chaser = nearestOfTeam(p.team, ball.x, ball.y);
+        if(chaser===p) dir = normVec(ball.x-p.x, ball.y-p.y);
+        else {
+          var holdX = p.baseX + (ball.x-p.baseX)*0.25;
+          var holdY = p.baseY + (ball.y-p.baseY)*0.25;
+          dir = normVec(holdX-p.x, holdY-p.y);
+        }
       }
+      if(p.actionCooldown>0) p.actionCooldown -= dt;
+    }
 
-      if(homeTeam.isUser || awayTeam.isUser){
-        var userIsHome = homeTeam.isUser;
-        var userScore = userIsHome ? res.gh : res.ga;
-        var oppScore = userIsHome ? res.ga : res.gh;
-        var oppName = userIsHome ? awayTeam.name : homeTeam.name;
-        var outcome = userScore > oppScore ? 'Menang' : (userScore < oppScore ? 'Kalah' : 'Seri');
-        var penNote = penalties ? ' (adu penalti)' : '';
-        addNews('Hasil ' + comp.stage.toUpperCase() + ': ' + state.clubName + ' ' + res.gh + ' - ' + res.ga + ' ' + oppName + ' (' + outcome + ')' + penNote,
-          outcome === 'Menang' ? 'good' : (outcome === 'Kalah' ? 'bad' : null));
+    if(dir.x!==0 || dir.y!==0) p.facing = dir;
+    p.x += dir.x*speed*dt; p.y += dir.y*speed*dt;
+    p.x = clamp(p.x, PLAYER_R, FW-PLAYER_R);
+    p.y = clamp(p.y, PLAYER_R, FH-PLAYER_R);
+  }
 
-        if(!knockout){
-          var prize = outcome === 'Menang' ? prizeForStage(comp.stage,'win') : (outcome === 'Seri' ? prizeForStage(comp.stage,'draw') : 0);
-          if(prize > 0){ state.budget += prize; addNews('Bonus performa pertandingan: +' + fmtMoney(prize), 'good'); }
-        } else {
-          var winnerIsUser = penalties ? (userIsHome ? f.penWinnerIsHome : !f.penWinnerIsHome) : (userScore > oppScore);
-          if(winnerIsUser){
-            var prizeK = prizeForStage(comp.stage,'win');
-            state.budget += prizeK;
-            addNews('Bonus kemenangan ' + comp.stage + ': +' + fmtMoney(prizeK), 'good');
+  function resolvePlayerCollisions(){
+    for(var i=0;i<players.length;i++){
+      for(var j=i+1;j<players.length;j++){
+        var a=players[i], b=players[j];
+        var dx=b.x-a.x, dy=b.y-a.y;
+        var d=Math.sqrt(dx*dx+dy*dy);
+        var minD = PLAYER_R*2*0.85;
+        if(d>0 && d<minD){
+          var overlap=(minD-d)/2, nx=dx/d, ny=dy/d;
+          a.x-=nx*overlap; a.y-=ny*overlap; b.x+=nx*overlap; b.y+=ny*overlap;
+        }
+      }
+    }
+  }
+
+  function updateBall(dt){
+    var prevController = ball.controller;
+    if(ball.freeTimer>0){ ball.freeTimer -= dt; }
+    else {
+      var best=null, bestD=Infinity;
+      for(var i=0;i<players.length;i++){
+        var p=players[i];
+        var d=Math.sqrt((p.x-ball.x)*(p.x-ball.x)+(p.y-ball.y)*(p.y-ball.y));
+        if(d<POSSESSION_R && d<bestD){ bestD=d; best=p; }
+      }
+      if(best!==prevController) resolveOffsideIfNeeded(best);
+      ball.controller = best;
+    }
+
+    if(ball.controller && ball.freeTimer<=0){
+      var p = ball.controller;
+      var tx=p.x+p.facing.x*20, ty=p.y+p.facing.y*20;
+      ball.x += (tx-ball.x)*0.3; ball.y += (ty-ball.y)*0.3;
+      ball.vx *= 0.8; ball.vy *= 0.8;
+
+      for(var k=0;k<players.length;k++){
+        var q = players[k];
+        if(q.team===p.team) continue;
+        var dq = Math.sqrt((q.x-ball.x)*(q.x-ball.x)+(q.y-ball.y)*(q.y-ball.y));
+        if(dq < STEAL_R){
+          if(Math.random() < 0.5*q.skill*dt){
+            var cleanProb = clamp(0.5+(q.skill-p.skill)*0.4, 0.15, 0.85);
+            var r = Math.random();
+            if(r < cleanProb){
+              var away = normVec(ball.x-p.x, ball.y-p.y);
+              if(away.x===0 && away.y===0) away = {x:(q.team==='blue'?1:-1), y:0};
+              ball.vx = away.x*120+(Math.random()-0.5)*60;
+              ball.vy = away.y*120+(Math.random()-0.5)*60;
+              ball.controller=null; ball.freeTimer=0.15;
+            } else if(matchConfig.fouls && r < cleanProb+(1-cleanProb)*0.65*referee.profile.foulMult){
+              var cardResult = handleCard(q, Math.random());
+              var subtitle = cardResult==='yellow' ? 'Kartu kuning' : (cardResult ? 'Kartu merah' : null);
+              var icon = cardResult==='yellow' ? SVG.yellow : (cardResult ? SVG.red : SVG.whistle);
+              phase='stoppage'; phaseTimer=1.7;
+              placeBallAt(p.x,p.y);
+              flash('PELANGGARAN!', subtitle || ('Bola untuk '+(p.team==='blue'?'Tim Biru':'Tim Merah')), icon);
+              return;
+            } else {
+              ball.vx=(Math.random()-0.5)*140; ball.vy=(Math.random()-0.5)*140;
+              ball.controller=null; ball.freeTimer=0.15;
+            }
+            break;
           }
         }
       }
-    });
+    } else {
+      ball.x += ball.vx*dt; ball.y += ball.vy*dt;
+      var damp = Math.pow(0.985, dt*60);
+      ball.vx *= damp; ball.vy *= damp;
+    }
 
-    comp.matchdayPointer++;
-    var allPlayed = comp.fixtures.every(function(f){ return f.played; });
-    if(allPlayed) evaluateStageEnd();
-  }
-
-  function evaluateStageEnd(){
-    var comp = state.competition;
-
-    if(comp.stage === 'kualifikasi' || comp.stage === 'grup'){
-      var sorted = comp.teams.slice().sort(function(a,b){
-        if(b.pts !== a.pts) return b.pts - a.pts;
-        var gdA=a.gf-a.ga, gdB=b.gf-b.ga;
-        if(gdB !== gdA) return gdB-gdA;
-        return b.gf-a.gf;
-      });
-      var userTeam = comp.teams.filter(function(t){ return t.isUser; })[0];
-      var userRank = sorted.indexOf(userTeam) + 1;
-
-      if(comp.stage === 'kualifikasi'){
-        if(userRank <= 2){
-          addNews(state.clubName + ' LOLOS kualifikasi FBG Cup sebagai peringkat ' + userRank + '!', 'good');
-          state.reputation = D.clamp(state.reputation+4, 0, 100);
-          createGroupStage('grup', -4, 12);
-        } else {
-          addNews(state.clubName + ' GAGAL lolos kualifikasi FBG Cup (peringkat ' + userRank + ').', 'bad');
-          state.budget += 200;
-          comp.stage = 'gagal_kualifikasi';
-          state.reputation = D.clamp(state.reputation-2, 0, 100);
-        }
-      } else {
-        if(userRank <= 2){
-          addNews(state.clubName + ' lolos ke babak GUGUR FBG Cup sebagai peringkat ' + userRank + ' grup!', 'good');
-          state.reputation = D.clamp(state.reputation+6, 0, 100);
-          setupKnockout('semifinal');
-        } else {
-          addNews(state.clubName + ' tersingkir di fase grup FBG Cup (peringkat ' + userRank + ').', 'bad');
-          comp.stage = 'tersingkir_grup';
-          state.reputation = D.clamp(state.reputation-1, 0, 100);
-        }
-      }
-    } else if(comp.stage === 'semifinal'){
-      var f = comp.fixtures[0];
-      var userIsHome = comp.teams[0].isUser;
-      var winnerIsUser = f.penalties ? (userIsHome ? f.penWinnerIsHome : !f.penWinnerIsHome) : (userIsHome ? f.gh>f.ga : f.ga>f.gh);
-      if(winnerIsUser){
-        addNews(state.clubName + ' MENANG semifinal dan melaju ke FINAL FBG Cup!', 'good');
-        state.reputation = D.clamp(state.reputation+8, 0, 100);
-        setupKnockout('final');
-      } else {
-        addNews(state.clubName + ' kalah di semifinal FBG Cup.', 'bad');
-        state.budget += 3000;
-        addNews('Bonus semifinalis: +' + fmtMoney(3000), 'good');
-        comp.stage = 'tersingkir_semifinal';
-      }
-    } else if(comp.stage === 'final'){
-      var f2 = comp.fixtures[0];
-      var userIsHome2 = comp.teams[0].isUser;
-      var winnerIsUser2 = f2.penalties ? (userIsHome2 ? f2.penWinnerIsHome : !f2.penWinnerIsHome) : (userIsHome2 ? f2.gh>f2.ga : f2.ga>f2.gh);
-      if(winnerIsUser2){
-        addNews(state.clubName + ' JUARA FBG Cup musim ini! 🏆', 'good');
-        state.budget += 8000;
-        state.reputation = D.clamp(state.reputation+15, 0, 100);
-        comp.stage = 'champion';
-      } else {
-        addNews(state.clubName + ' menjadi runner-up FBG Cup musim ini.', 'bad');
-        state.budget += 3000;
-        state.reputation = D.clamp(state.reputation+5, 0, 100);
-        comp.stage = 'runner_up';
-      }
+    if(ball.y<BALL_R){ ball.y=BALL_R; ball.vy=-ball.vy*0.6; }
+    if(ball.y>FH-BALL_R){ ball.y=FH-BALL_R; ball.vy=-ball.vy*0.6; }
+    if(ball.x<BALL_R){
+      if(ball.y>GOAL_TOP && ball.y<GOAL_BOTTOM) onGoal('red');
+      else { ball.x=BALL_R; ball.vx=-ball.vx*0.6; }
+    }
+    if(ball.x>FW-BALL_R){
+      if(ball.y>GOAL_TOP && ball.y<GOAL_BOTTOM) onGoal('blue');
+      else { ball.x=FW-BALL_R; ball.vx=-ball.vx*0.6; }
     }
   }
 
-  function startQualification(){
-    createGroupStage('kualifikasi', -10, 5);
-    addNews('Babak kualifikasi FBG Cup musim ini dimulai!', 'good');
-    save(); renderAll();
-  }
-
-  function startNewSeason(){
-    state.seasonNumber++;
-    state.squad.forEach(function(p){ p.age++; });
-    state.competition = { stage:'none' };
-    addNews('Musim ' + state.seasonNumber + ' dimulai. Pemain bertambah usia satu tahun.', 'good');
-    save(); renderAll();
-  }
-
-  var TERMINAL_STAGES = ['gagal_kualifikasi','tersingkir_grup','tersingkir_semifinal','runner_up','champion'];
-
-  function fbgStageLabel(comp){
-    if(!comp || comp.stage === 'none') return 'Klub belum mengikuti FBG Cup musim ini.';
-    var map = {
-      kualifikasi:'Sedang menjalani babak Kualifikasi FBG Cup.',
-      grup:'Sedang menjalani Fase Grup FBG Cup.',
-      semifinal:'Klub lolos ke babak SEMIFINAL FBG Cup!',
-      final:'Klub lolos ke babak FINAL FBG Cup!',
-      gagal_kualifikasi:'Gagal lolos kualifikasi musim ini.',
-      tersingkir_grup:'Tersingkir di fase grup musim ini.',
-      tersingkir_semifinal:'Tersingkir di semifinal musim ini.',
-      runner_up:'Runner-up FBG Cup musim ini!',
-      champion:'JUARA FBG Cup musim ini! 🏆'
-    };
-    return map[comp.stage] || '';
+  function onGoal(scoringTeam){
+    if(phase!=='play') return;
+    if(scoringTeam==='blue') scoreBlue++; else scoreRed++;
+    scoreBlueEl.textContent = scoreBlue; scoreRedEl.textContent = scoreRed;
+    phase='celebrate'; phaseTimer=2.2;
+    flash('GOL!', scoringTeam==='blue'?'Tim Biru unggul!':'Tim Merah unggul!', SVG.ball);
+    if(scoringTeam==='blue'){ setCrowdMood('blue','cheer',2.6); setCrowdMood('red','sad',2.6); }
+    else { setCrowdMood('red','cheer',2.6); setCrowdMood('blue','sad',2.6); }
   }
 
   // ================= Rendering =================
-  function renderTopbar(){
-    hClubName.textContent = state.clubName;
-    hSeasonWeek.textContent = 'Musim ' + state.seasonNumber + ' · Minggu ' + state.week;
-    hBudget.textContent = fmtMoney(state.budget);
-    hReputation.textContent = state.reputation + '/100';
-    hRating.textContent = D.squadOverall(state.squad);
-  }
+  function drawStadium(t){
+    ctx.clearRect(0,0,STW,STH);
+    var standGrad = ctx.createLinearGradient(0,0,0,STH);
+    standGrad.addColorStop(0,'#1a2038'); standGrad.addColorStop(1,'#0c1020');
+    ctx.fillStyle = standGrad; ctx.fillRect(0,0,STW,STH);
 
-  function summaryRow(label,val,cls){
-    return '<div class="summaryRow"><span>'+label+'</span><span class="val'+(cls?' '+cls:'')+'">'+val+'</span></div>';
-  }
-
-  function renderDashboard(){
-    var wages = totalWages();
-    var upkeep = facilitiesUpkeep();
-    dashSummary.innerHTML =
-      summaryRow('Nama Klub', state.clubName) +
-      summaryRow('Kas', fmtMoney(state.budget), state.budget>=0?'pos':'neg') +
-      summaryRow('Reputasi', state.reputation+'/100') +
-      summaryRow('Rating Tim', D.squadOverall(state.squad)) +
-      summaryRow('Jumlah Pemain', state.squad.length+'/26') +
-      summaryRow('Estimasi Gaji Mingguan', fmtMoney(-wages), 'neg') +
-      summaryRow('Estimasi Upkeep Fasilitas', fmtMoney(-upkeep), 'neg') +
-      summaryRow('Status FBG Cup', fbgStageLabel(state.competition));
-
-    newsFeed.innerHTML = state.newsLog.slice(0,25).map(function(n){
-      return '<div class="newsItem'+(n.type?' '+n.type:'')+'"><span class="wk">Minggu '+n.week+'</span>'+n.text+'</div>';
-    }).join('') || '<p class="tiny">Belum ada berita.</p>';
-  }
-
-  function playerCardHtml(p, isSquad){
-    var ov = D.calcOverall(p.star, p.variance);
-    var stars = '';
-    for(var i=1;i<=10;i++) stars += '<span class="starDot'+(i<=Math.round(p.star)?' on':'')+'"></span>';
-    var flag = p.origin === 'id' ? '🇮🇩 Lokal' : '🌍 Internasional';
-    var injBadge = p.injuredWeeks > 0 ? '<span class="injBadge">Cedera '+p.injuredWeeks+'mg</span>' : '';
-    var actions;
-    if(isSquad){
-      var trainCost = D.trainingCostForStar(p.star, state.facilities.training);
-      var sellVal = Math.round(D.transferCostForStar(p.star, p.position, p.age) * 0.55);
-      actions =
-        '<div class="pCost">OVR '+ov+'</div>'+
-        '<button class="btn small" data-action="train" data-id="'+p.id+'" '+((p.trainedThisWeek||p.injuredWeeks>0)?'disabled':'')+'>Latih (Rp'+trainCost.toLocaleString('id-ID')+')</button>'+
-        '<button class="btn small danger" data-action="sell" data-id="'+p.id+'">Jual (Rp'+sellVal.toLocaleString('id-ID')+')</button>';
-    } else {
-      actions =
-        '<div class="pCost">Rp'+p.cost.toLocaleString('id-ID')+'</div>'+
-        '<button class="btn small primary" data-action="buy" data-id="'+p.id+'">Rekrut</button>';
+    ctx.fillStyle = 'rgba(255,255,255,0.03)';
+    for(var i=0;i<3;i++){
+      var inset=i*14;
+      ctx.fillRect(inset, inset, STW-inset*2, MARGIN_Y-inset-4);
+      ctx.fillRect(inset, STH-MARGIN_Y+4, STW-inset*2, MARGIN_Y-inset-4);
     }
-    return '<div class="playerCard">'+
-      '<div class="posBadge '+p.position+'">'+p.position+'</div>'+
-      '<div class="pInfo">'+
-        '<div class="pName">'+p.name+' <span class="flagBadge">'+flag+'</span>'+injBadge+'</div>'+
-        '<div class="pMeta">Usia '+p.age+' · Gaji Rp'+p.wage.toLocaleString('id-ID')+'/mg · OVR '+ov+'</div>'+
-        '<div class="starBar">'+stars+'</div>'+
-      '</div>'+
-      '<div class="pActions">'+actions+'</div>'+
-    '</div>';
+
+    drawCrowd(t);
+
+    [[40,30],[STW-40,30],[40,STH-30],[STW-40,STH-30]].forEach(function(pos){
+      ctx.fillStyle='rgba(255,255,220,0.9)';
+      ctx.beginPath(); ctx.arc(pos[0],pos[1],6,0,Math.PI*2); ctx.fill();
+      var glow = ctx.createRadialGradient(pos[0],pos[1],0,pos[0],pos[1],90);
+      glow.addColorStop(0,'rgba(255,255,220,0.18)'); glow.addColorStop(1,'rgba(255,255,220,0)');
+      ctx.fillStyle=glow; ctx.beginPath(); ctx.arc(pos[0],pos[1],90,0,Math.PI*2); ctx.fill();
+    });
+
+    ctx.save();
+    ctx.translate(MARGIN_X, MARGIN_Y);
+    drawPitch();
+    drawReferee();
+    drawPlayers();
+    drawBall();
+    ctx.restore();
   }
 
-  function renderSquad(){
-    var list = state.squad.filter(function(p){ return currentSquadFilter==='ALL' || p.position===currentSquadFilter; })
-      .sort(function(a,b){ return D.calcOverall(b.star,b.variance) - D.calcOverall(a.star,a.variance); });
-    squadCount.textContent = state.squad.length;
-    squadList.innerHTML = list.map(function(p){ return playerCardHtml(p,true); }).join('') || '<p class="tiny">Tidak ada pemain di posisi ini.</p>';
+  function drawPitch(){
+    var stripeCount=10, stripeW=FW/stripeCount;
+    for(var i=0;i<stripeCount;i++){
+      ctx.fillStyle = (i%2===0)?'#1e6b34':'#1a5f2e';
+      ctx.fillRect(i*stripeW,0,stripeW,FH);
+    }
+    ctx.strokeStyle='rgba(255,255,255,0.75)'; ctx.lineWidth=3;
+    ctx.strokeRect(4,4,FW-8,FH-8);
+    ctx.beginPath(); ctx.moveTo(FW/2,4); ctx.lineTo(FW/2,FH-4); ctx.stroke();
+    ctx.beginPath(); ctx.arc(FW/2,FH/2,60,0,Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(FW/2,FH/2,3,0,Math.PI*2); ctx.fillStyle='rgba(255,255,255,0.85)'; ctx.fill();
+
+    var boxW=110, boxH=260;
+    ctx.strokeRect(4, FH/2-boxH/2, boxW, boxH);
+    ctx.strokeRect(FW-4-boxW, FH/2-boxH/2, boxW, boxH);
+    var smallW=45, smallH=130;
+    ctx.strokeRect(4, FH/2-smallH/2, smallW, smallH);
+    ctx.strokeRect(FW-4-smallW, FH/2-smallH/2, smallW, smallH);
+
+    ctx.fillStyle='rgba(255,255,255,0.12)';
+    ctx.fillRect(-14, GOAL_TOP, 18, GOAL_HEIGHT);
+    ctx.fillRect(FW-4, GOAL_TOP, 18, GOAL_HEIGHT);
+    ctx.strokeStyle='rgba(255,255,255,0.9)'; ctx.lineWidth=3;
+    ctx.strokeRect(-14, GOAL_TOP, 18, GOAL_HEIGHT);
+    ctx.strokeRect(FW-4, GOAL_TOP, 18, GOAL_HEIGHT);
+    ctx.strokeStyle='rgba(255,255,255,0.35)'; ctx.lineWidth=1;
+    for(var ny=GOAL_TOP; ny<GOAL_BOTTOM; ny+=10){
+      ctx.beginPath(); ctx.moveTo(-14,ny); ctx.lineTo(4,ny); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(FW-4,ny); ctx.lineTo(FW+4,ny); ctx.stroke();
+    }
   }
 
-  function renderMarket(){
-    refreshCost.textContent = (200 + state.facilities.scouting*100).toLocaleString('id-ID');
-    marketList.innerHTML = state.market.map(function(p){ return playerCardHtml(p,false); }).join('') || '<p class="tiny">Pasar kosong, klik refresh pasar.</p>';
+  function drawReferee(){
+    if(!referee.pos) return;
+    referee.pos.x += (ball.x-referee.pos.x)*0.03;
+    referee.pos.y += (ball.y+40-referee.pos.y)*0.03;
+    ctx.beginPath(); ctx.arc(referee.pos.x, referee.pos.y, 11, 0, Math.PI*2); ctx.fillStyle='#222'; ctx.fill();
+    ctx.beginPath(); ctx.arc(referee.pos.x, referee.pos.y-2, 5, 0, Math.PI*2); ctx.fillStyle='#ffe45c'; ctx.fill();
   }
 
-  function renderFBG(){
-    var comp = state.competition;
-    var html = '';
-    if(!comp || comp.stage === 'none'){
-      html = '<p class="lead">'+fbgStageLabel(comp)+'</p><div class="btn primary" id="startQualiBtn">Mulai Kualifikasi FBG Cup</div>';
-    } else {
-      html = '<p class="lead">'+fbgStageLabel(comp)+'</p>';
-      if(TERMINAL_STAGES.indexOf(comp.stage) !== -1){
-        html += '<div class="btn primary" id="newSeasonBtn">Mulai Musim Baru</div>';
+  function drawPlayers(){
+    var roleTag = { GK:'GK', DF:'DF', MF:'MF', FW:'FW' };
+    players.forEach(function(p){
+      ctx.beginPath(); ctx.arc(p.x,p.y,PLAYER_R,0,Math.PI*2);
+      ctx.fillStyle=p.color; ctx.fill();
+      ctx.lineWidth=2; ctx.strokeStyle='rgba(0,0,0,0.35)'; ctx.stroke();
+
+      if(p.isUser){
+        ctx.beginPath(); ctx.arc(p.x,p.y,PLAYER_R+5,0,Math.PI*2);
+        ctx.lineWidth=2.5; ctx.strokeStyle='rgba(255,255,255,0.9)'; ctx.stroke();
+      }
+      var fx=p.x+p.facing.x*(PLAYER_R+9), fy=p.y+p.facing.y*(PLAYER_R+9);
+      ctx.beginPath(); ctx.arc(fx,fy,3.2,0,Math.PI*2); ctx.fillStyle='rgba(255,255,255,0.85)'; ctx.fill();
+
+      if(ball.controller===p){
+        ctx.beginPath(); ctx.arc(p.x,p.y,PLAYER_R+9,0,Math.PI*2);
+        ctx.strokeStyle='rgba(255,212,121,0.7)'; ctx.lineWidth=2; ctx.stroke();
+      }
+
+      ctx.font='9px -apple-system,sans-serif'; ctx.textAlign='center';
+      ctx.fillStyle='rgba(255,255,255,0.6)';
+      ctx.fillText(roleTag[p.role]+' · '+p.skillScore, p.x, p.y-PLAYER_R-12);
+
+      if(p.yellowCards>0){ ctx.fillStyle='#ffd400'; ctx.fillRect(p.x-8, p.y+PLAYER_R+3, 5,7); }
+    });
+  }
+
+  function drawBall(){
+    ctx.beginPath(); ctx.arc(ball.x, ball.y+3, BALL_R*0.9,0,Math.PI*2); ctx.fillStyle='rgba(0,0,0,0.25)'; ctx.fill();
+    ctx.beginPath(); ctx.arc(ball.x, ball.y, BALL_R,0,Math.PI*2); ctx.fillStyle='#fff'; ctx.fill();
+    ctx.lineWidth=1.5; ctx.strokeStyle='rgba(0,0,0,0.4)'; ctx.stroke();
+    ctx.beginPath(); ctx.arc(ball.x, ball.y, BALL_R*0.4,0,Math.PI*2); ctx.fillStyle='#222'; ctx.fill();
+  }
+
+  function updateCardsHud(){
+    cyB.textContent=stats.blueYellow; crB.textContent=stats.blueRed;
+    cyR.textContent=stats.redYellow; crR.textContent=stats.redRed;
+  }
+
+  function endMatch(){
+    phase='ended';
+    finalScoreLine.textContent = scoreBlue+' - '+scoreRed;
+    var tag,color;
+    if(scoreBlue>scoreRed){ tag='MENANG!'; color='var(--accent3)'; }
+    else if(scoreBlue<scoreRed){ tag='KALAH'; color='var(--danger)'; }
+    else { tag='SERI'; color='var(--accent4)'; }
+    resultTag.textContent = tag; resultTag.style.color = color;
+    statsBox.innerHTML = 'Kartu Kuning — Biru: '+stats.blueYellow+' | Merah: '+stats.redYellow+'<br>Kartu Merah — Biru: '+stats.blueRed+' | Merah: '+stats.redRed;
+    endOverlay.classList.remove('hidden');
+  }
+
+  // ================= Main loop =================
+  function loop(ts){
+    if(lastFrameTs===null) lastFrameTs=ts;
+    var dt = (ts-lastFrameTs)/1000;
+    if(dt>0.05) dt=0.05;
+    lastFrameTs=ts;
+    var tSec = ts/1000;
+    updateCrowdMood(dt);
+
+    if(phase==='play'){
+      matchTime -= dt;
+      if(matchTime<=0){
+        matchTime=0; timePillEl.textContent=fmtTime(matchTime);
+        drawStadium(tSec); endMatch(); return;
+      }
+      timePillEl.textContent = fmtTime(matchTime);
+      players.forEach(function(p){ if(p.isUser) updateUser(p,dt); else updateAIPlayer(p,dt); });
+      resolvePlayerCollisions();
+      if(phase==='play') updateBall(dt);
+    } else if(phase==='celebrate' || phase==='kickoff' || phase==='stoppage'){
+      phaseTimer -= dt;
+      if(phaseTimer<=0){
+        if(phase==='celebrate') resetPositionsSoft();
+        phase='play';
       }
     }
-    fbgStatus.innerHTML = html;
+    drawStadium(tSec);
+    updateCardsHud();
+    rafId = requestAnimationFrame(loop);
+  }
 
-    if(comp && comp.teams && comp.teams.length > 2){
-      var sorted = comp.teams.slice().sort(function(a,b){
-        if(b.pts !== a.pts) return b.pts - a.pts;
-        var gdA=a.gf-a.ga, gdB=b.gf-b.ga;
-        if(gdB !== gdA) return gdB-gdA;
-        return b.gf - a.gf;
+  // ================= Flow: mode -> sandbox -> lineup -> kickoff =================
+  function applyFieldConstants(){
+    FW = CFG.match.fieldWidth; FH = CFG.match.fieldHeight;
+    GOAL_HEIGHT = CFG.match.goalHeight;
+    GOAL_TOP = FH/2 - GOAL_HEIGHT/2; GOAL_BOTTOM = FH/2 + GOAL_HEIGHT/2;
+    PLAYER_R = CFG.match.playerRadius; BALL_R = CFG.match.ballRadius;
+    POSSESSION_R = CFG.match.possessionRadius; STEAL_R = CFG.match.stealRadius;
+    MARGIN_X = 130; MARGIN_Y = 105;
+  }
+
+  function goToLineup(cfg, modeLabel){
+    matchConfig = cfg;
+    matchConfig.label = modeLabel;
+    setupReferee(cfg.referee);
+    buildSquad();
+
+    function renderTeamCards(container, team){
+      var list = players.filter(function(p){ return p.team===team; })
+        .sort(function(a,b){ return b.skillScore-a.skillScore; });
+      container.innerHTML = list.map(function(p){
+        var grade = gradeFor(p.skillScore);
+        var flag = p.origin==='id' ? '🇮🇩' : '🌍';
+        return '<div class="playerStatCard">'+
+          '<div class="pscBadge '+p.role+'">'+p.role+'</div>'+
+          '<div class="pscInfo"><div class="pscName">'+p.name+(p.isUser?' <span class="pscTag">KAMU</span>':'')+'</div>'+
+          '<div class="pscTag">'+flag+' '+(p.origin==='id'?'Lokal':'Internasional')+'</div></div>'+
+          '<div class="pscScore"><div class="pscNum" style="color:'+grade.color+'">'+p.skillScore+'</div>'+
+          '<div class="pscGrade" style="color:'+grade.color+'">'+grade.label+'</div></div>'+
+        '</div>';
+      }).join('');
+    }
+    renderTeamCards(lineupBlueEl, 'blue');
+    renderTeamCards(lineupRedEl, 'red');
+
+    modeOverlay.classList.add('hidden');
+    sandboxOverlay.classList.add('hidden');
+    lineupOverlay.classList.remove('hidden');
+  }
+
+  function kickoffMatch(){
+    scoreBlue=0; scoreRed=0;
+    stats = { blueYellow:0, blueRed:0, redYellow:0, redRed:0 };
+    scoreBlueEl.textContent='0'; scoreRedEl.textContent='0';
+    matchTime = matchConfig.seconds;
+    timePillEl.textContent = fmtTime(matchTime);
+    modePillEl.textContent = matchConfig.label;
+    ball.x=FW/2; ball.y=FH/2; ball.vx=0; ball.vy=0; ball.controller=null; ball.freeTimer=0; ball.offsideFlag=null;
+
+    lineupOverlay.classList.add('hidden');
+    endOverlay.classList.add('hidden');
+
+    phase='kickoff'; phaseTimer=1.0;
+    flash('KICK OFF!', matchConfig.label, SVG.whistle);
+    setCrowdMood('blue','idle',0); setCrowdMood('red','idle',0);
+
+    lastFrameTs=null;
+    if(rafId) cancelAnimationFrame(rafId);
+    rafId = requestAnimationFrame(loop);
+  }
+
+  // ================= Boot & event wiring =================
+  function wireEvents(){
+    var isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints>0;
+    if(isTouch) controlsEl.classList.remove('hidden'); else hintEl.classList.remove('hidden');
+    window.addEventListener('resize', resize);
+    resize();
+    buildCrowd();
+
+    document.querySelectorAll('.modeBtn').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var mode = btn.getAttribute('data-mode');
+        if(mode==='sandbox'){
+          modeOverlay.classList.add('hidden');
+          sandboxOverlay.classList.remove('hidden');
+          return;
+        }
+        var preset = CFG.modes[mode];
+        goToLineup({
+          squad: CFG.squadDefault,
+          skillMin: preset.skillMin, skillMax: preset.skillMax,
+          offside: preset.offside, fouls: preset.fouls,
+          referee: preset.referee, seconds: preset.seconds,
+          speedMultiplier: preset.speedMultiplier
+        }, preset.label);
       });
-      var rows = sorted.map(function(t){
-        return '<tr class="'+(t.isUser?'userRow':'')+'"><td class="teamCell">'+t.name+'</td><td>'+t.w+'</td><td>'+t.d+'</td><td>'+t.l+'</td><td>'+t.gf+'</td><td>'+t.ga+'</td><td>'+(t.gf-t.ga)+'</td><td>'+t.pts+'</td></tr>';
-      }).join('');
-      fbgStandings.innerHTML = '<table class="standings"><thead><tr><th>Tim</th><th>M</th><th>S</th><th>K</th><th>GM</th><th>GK</th><th>SG</th><th>Poin</th></tr></thead><tbody>'+rows+'</tbody></table>';
-    } else {
-      fbgStandings.innerHTML = '';
-    }
-
-    if(comp && comp.fixtures){
-      fbgFixtures.innerHTML = comp.fixtures.map(function(f){
-        var scoreTxt = f.played ? (f.gh+' - '+f.ga+(f.penalties?' (pen)':'')) : 'vs';
-        return '<div class="fixtureRow'+(f.played?' played':'')+'"><span>MD'+f.matchday+' · '+f.home+'</span><span class="fixtureScore">'+scoreTxt+'</span><span>'+f.away+'</span></div>';
-      }).join('');
-    } else {
-      fbgFixtures.innerHTML = '';
-    }
-  }
-
-  function renderFacilities(){
-    var keys = ['stadium','training','medical','scouting'];
-    facilitiesList.innerHTML = keys.map(function(key){
-      var meta = facilityMeta(key);
-      var lvl = state.facilities[key];
-      var cost = lvl*1500 + 1000;
-      var dots = '';
-      for(var i=1;i<=5;i++) dots += '<span'+(i<=lvl?' class="on"':'')+'></span>';
-      var btn = lvl >= 5
-        ? '<button class="btn ghost small" disabled>Level Maksimum</button>'
-        : '<button class="btn primary small" data-action="upgrade" data-key="'+key+'">Upgrade (Rp'+cost.toLocaleString('id-ID')+')</button>';
-      return '<div class="facilityCard">'+
-        '<h3>'+meta.label+' — Lv.'+lvl+'</h3>'+
-        '<div class="facDesc">'+meta.desc+'</div>'+
-        '<div class="levelDots">'+dots+'</div>'+
-        btn+
-      '</div>';
-    }).join('');
-  }
-
-  function renderAll(){
-    renderTopbar();
-    renderDashboard();
-    renderSquad();
-    renderMarket();
-    renderFBG();
-    renderFacilities();
-  }
-
-  // ================= Event wiring =================
-  startClubBtn.addEventListener('click', function(){
-    var name = clubNameInput.value.trim();
-    if(!name){ toast('Isi dulu nama klubnya, bang.'); return; }
-    newClub(name);
-  });
-  clubNameInput.addEventListener('keydown', function(e){
-    if(e.key === 'Enter') startClubBtn.click();
-  });
-
-  nextWeekBtn.addEventListener('click', processWeek);
-  refreshMarketBtn.addEventListener('click', refreshMarket);
-  resetBtn.addEventListener('click', function(){
-    if(confirm('Yakin reset total progres klub? Aksi ini permanen.')){
-      D.clearState();
-      location.reload();
-    }
-  });
-
-  document.querySelectorAll('.tabBtn').forEach(function(btn){
-    btn.addEventListener('click', function(){
-      document.querySelectorAll('.tabBtn').forEach(function(b){ b.classList.remove('active'); });
-      document.querySelectorAll('.tabPane').forEach(function(p){ p.classList.remove('active'); });
-      btn.classList.add('active');
-      document.getElementById('tab-'+btn.getAttribute('data-tab')).classList.add('active');
     });
-  });
 
-  squadFilter.addEventListener('click', function(e){
-    var btn = e.target.closest ? e.target.closest('.chipBtn') : null;
-    if(!btn) return;
-    squadFilter.querySelectorAll('.chipBtn').forEach(function(b){ b.classList.remove('active'); });
-    btn.classList.add('active');
-    currentSquadFilter = btn.getAttribute('data-pos');
-    renderSquad();
-  });
+    document.getElementById('sbBack').addEventListener('click', function(){
+      sandboxOverlay.classList.add('hidden');
+      modeOverlay.classList.remove('hidden');
+    });
+    var sbSpeedInput = document.getElementById('sbSpeed');
+    var sbSpeedVal = document.getElementById('sbSpeedVal');
+    sbSpeedInput.addEventListener('input', function(){
+      sbSpeedVal.textContent = parseFloat(sbSpeedInput.value).toFixed(1)+'x';
+    });
+    document.getElementById('sbStart').addEventListener('click', function(){
+      function num(id){ return parseInt(document.getElementById(id).value,10) || 0; }
+      var skillMin = clamp(num('sbSkillMin'), CFG.skillScale.min, CFG.skillScale.max);
+      var skillMax = clamp(num('sbSkillMax'), CFG.skillScale.min, CFG.skillScale.max);
+      if(skillMax < skillMin){ var tmp=skillMin; skillMin=skillMax; skillMax=tmp; }
+      var cfg = {
+        squad: {
+          blue: { GK:num('sbBlueGK'), DF:num('sbBlueDF'), MF:num('sbBlueMF'), FW:num('sbBlueFW') },
+          red:  { GK:num('sbRedGK'),  DF:num('sbRedDF'),  MF:num('sbRedMF'),  FW:num('sbRedFW')  }
+        },
+        skillMin: skillMin, skillMax: skillMax,
+        offside: document.getElementById('sbOffside').value==='1',
+        fouls: document.getElementById('sbFouls').value==='1',
+        referee: document.getElementById('sbReferee').value,
+        seconds: Math.max(30, (parseInt(document.getElementById('sbDuration').value,10)||5)*60),
+        speedMultiplier: parseFloat(sbSpeedInput.value) || 1
+      };
+      goToLineup(cfg, 'SANDBOX');
+    });
 
-  document.body.addEventListener('click', function(e){
-    var actionEl = e.target.closest ? e.target.closest('[data-action]') : null;
-    if(actionEl){
-      var action = actionEl.getAttribute('data-action');
-      if(action === 'train') trainPlayer(actionEl.getAttribute('data-id'));
-      else if(action === 'sell') sellPlayer(actionEl.getAttribute('data-id'));
-      else if(action === 'buy') buyPlayer(actionEl.getAttribute('data-id'));
-      else if(action === 'upgrade') upgradeFacility(actionEl.getAttribute('data-key'));
-      return;
+    document.getElementById('lineupBack').addEventListener('click', function(){
+      lineupOverlay.classList.add('hidden');
+      modeOverlay.classList.remove('hidden');
+    });
+    document.getElementById('lineupStart').addEventListener('click', kickoffMatch);
+
+    retryBtn.addEventListener('click', function(){
+      endOverlay.classList.add('hidden');
+      modeOverlay.classList.remove('hidden');
+    });
+
+    window.addEventListener('keydown', function(e){
+      var k = e.key.toLowerCase();
+      if(k==='w'||k==='arrowup') keys.up=true;
+      if(k==='s'||k==='arrowdown') keys.down=true;
+      if(k==='a'||k==='arrowleft') keys.left=true;
+      if(k==='d'||k==='arrowright') keys.right=true;
+      if(k===' '||e.code==='Space'){ keys.shoot=true; e.preventDefault(); }
+    });
+    window.addEventListener('keyup', function(e){
+      var k = e.key.toLowerCase();
+      if(k==='w'||k==='arrowup') keys.up=false;
+      if(k==='s'||k==='arrowdown') keys.down=false;
+      if(k==='a'||k==='arrowleft') keys.left=false;
+      if(k==='d'||k==='arrowright') keys.right=false;
+      if(k===' '||e.code==='Space'){ keys.shoot=false; }
+    });
+
+    function bindHold(el,onDown,onUp){
+      el.addEventListener('pointerdown', function(e){ e.preventDefault(); onDown(); el.classList.add('active'); });
+      el.addEventListener('pointerup', function(){ onUp(); el.classList.remove('active'); });
+      el.addEventListener('pointerleave', function(){ onUp(); el.classList.remove('active'); });
+      el.addEventListener('pointercancel', function(){ onUp(); el.classList.remove('active'); });
     }
-    if(e.target.id === 'startQualiBtn') startQualification();
-    if(e.target.id === 'newSeasonBtn') startNewSeason();
-  });
+    document.querySelectorAll('.dbtn').forEach(function(btn){
+      var k = btn.getAttribute('data-k');
+      if(!k) return;
+      bindHold(btn, function(){ keys[k]=true; }, function(){ keys[k]=false; });
+    });
+    bindHold(document.getElementById('shootBtn'), function(){ keys.shoot=true; }, function(){ keys.shoot=false; });
+  }
 
-  boot();
+  function init(){
+    grabDom();
+    applyFieldConstants();
+    wireEvents();
+    // idle preview render
+    matchConfig = { squad: CFG.squadDefault, skillMin: CFG.modes.normal.skillMin, skillMax: CFG.modes.normal.skillMax, offside:true, fouls:true, referee:'adil', seconds:300, speedMultiplier:1, label:'NORMAL' };
+    setupReferee('adil');
+    buildSquad();
+    resize();
+    drawStadium(0);
+  }
+
+  loadConfig(init);
 })();
