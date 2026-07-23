@@ -1,0 +1,52 @@
+{
+  "names": {
+    "idFirst": ["Andi","Budi","Rizky","Fajar","Dimas","Bagus","Yusuf","Fadli","Reza","Arya","Bayu","Eko","Wahyu","Rendra","Rio","Iqbal","Dedi","Hendra","Agus","Teguh","Doni","Galih","Farhan","Ilham","Rafi","Aldi","Fikri","Panji","Yoga","Adit"],
+    "idLast": ["Saputra","Pratama","Wijaya","Kusuma","Nugroho","Santoso","Setiawan","Hidayat","Firmansyah","Gunawan","Permana","Ramadhan","Susanto","Wibowo","Halim","Kurniawan","Maulana","Putra","Siregar","Hakim"],
+    "intlFirst": ["Marco","Luca","Carlos","Diego","Pierre","Lucas","Kevin","Erik","Andres","Nikolai","Owen","Jack","Liam","Mateo","Bruno","Ivan","Sven","Felix","Adrian","Dominik","Noah","Tomas","Viktor","Hugo","Leon"],
+    "intlLast": ["Silva","Fernandez","Rossi","Novak","Schmidt","Dubois","Andersson","Kowalski","Costa","Martins","Petrov","Larsson","Muller","Garcia","Santos","Ivanov","Nilsson","Bakker","Moreau","Lindqvist"]
+  },
+
+  "skillScale": { "min": 50, "max": 200, "userDefault": 190 },
+
+  "gradeTiers": [
+    { "max": 75,  "label": "Pemula",    "color": "#9aa6c8" },
+    { "max": 105, "label": "Biasa",     "color": "#7de1ff" },
+    { "max": 140, "label": "Bagus",     "color": "#c6ff8f" },
+    { "max": 175, "label": "Hebat",     "color": "#ffd479" },
+    { "max": 200, "label": "Legendaris","color": "#ff9ad1" }
+  ],
+
+  "squadDefault": {
+    "blue": { "GK": 1, "DF": 2, "MF": 2, "FW": 1 },
+    "red":  { "GK": 1, "DF": 2, "MF": 2, "FW": 2 }
+  },
+
+  "match": {
+    "fieldWidth": 960,
+    "fieldHeight": 600,
+    "goalHeight": 170,
+    "playerRadius": 14,
+    "ballRadius": 8,
+    "possessionRadius": 24,
+    "stealRadius": 20,
+    "userSpeed": 175,
+    "aiBaseSpeed": 150,
+    "shootPower": 430,
+    "shootRange": 300,
+    "defaultSeconds": 300
+  },
+
+  "modes": {
+    "latihan": { "label": "LATIHAN", "skillMin": 50,  "skillMax": 75,  "offside": false, "fouls": false, "referee": "pemula", "seconds": 300, "speedMultiplier": 1.0 },
+    "easy":    { "label": "EASY",    "skillMin": 75,  "skillMax": 105, "offside": true,  "fouls": true,  "referee": "pemula", "seconds": 300, "speedMultiplier": 1.0 },
+    "normal":  { "label": "NORMAL",  "skillMin": 105, "skillMax": 140, "offside": true,  "fouls": true,  "referee": "adil",   "seconds": 300, "speedMultiplier": 1.0 },
+    "hard":    { "label": "SUSAH",   "skillMin": 140, "skillMax": 195, "offside": true,  "fouls": true,  "referee": "pro",    "seconds": 300, "speedMultiplier": 1.08 }
+  },
+
+  "refereeProfiles": {
+    "adil":       { "foulMult": 1.0,  "offsideAcc": 0.95, "cardMult": 1.0,  "biased": false, "noisy": false },
+    "tidak_adil": { "foulMult": 1.0,  "offsideAcc": 0.85, "cardMult": 1.0,  "biased": true,  "noisy": false },
+    "pro":        { "foulMult": 1.15, "offsideAcc": 0.99, "cardMult": 1.15, "biased": false, "noisy": false },
+    "pemula":     { "foulMult": 0.55, "offsideAcc": 0.55, "cardMult": 0.7,  "biased": false, "noisy": true }
+  }
+}
