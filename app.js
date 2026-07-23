@@ -35,6 +35,83 @@
 
   var CFG = null;
 
+  // ================= Audio (prosedural, tanpa file eksternal) =================
+  var audioCtx = null;
+  var ambientGain = null;
+  var ambientTarget = 0.07;
+
+  function ensureAudio(){
+    if(audioCtx) { if(audioCtx.state==='suspended') audioCtx.resume(); return; }
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if(!AC) return;
+    audioCtx = new AC();
+    var bufSize = audioCtx.sampleRate * 2;
+    var buffer = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate);
+    var data = buffer.getChannelData(0);
+    for(var i=0;i<bufSize;i++) data[i] = (Math.random()*2-1);
+    var noiseSrc = audioCtx.createBufferSource();
+    noiseSrc.buffer = buffer; noiseSrc.loop = true;
+    var filter = audioCtx.createBiquadFilter();
+    filter.type = 'bandpass'; filter.frequency.value = 550; filter.Q.value = 0.5;
+    ambientGain = audioCtx.createGain();
+    ambientGain.gain.value = 0;
+    noiseSrc.connect(filter).connect(ambientGain).connect(audioCtx.destination);
+    noiseSrc.start();
+  }
+
+  function setAmbientTarget(v){
+    ambientTarget = v;
+    if(ambientGain && audioCtx){
+      ambientGain.gain.cancelScheduledValues(audioCtx.currentTime);
+      ambientGain.gain.linearRampToValueAtTime(v, audioCtx.currentTime + 0.4);
+    }
+  }
+
+  function playTone(freq, duration, type, gainVal, startDelay){
+    if(!audioCtx) return;
+    var t0 = audioCtx.currentTime + (startDelay||0);
+    var osc = audioCtx.createOscillator();
+    var g = audioCtx.createGain();
+    osc.type = type || 'sine';
+    osc.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(gainVal||0.18, t0+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0+duration);
+    osc.connect(g).connect(audioCtx.destination);
+    osc.start(t0); osc.stop(t0+duration+0.02);
+  }
+
+  function playWhistle(long){
+    if(!audioCtx) return;
+    playTone(2900, long?0.5:0.18, 'square', 0.12, 0);
+    if(!long) playTone(2900, 0.18, 'square', 0.12, 0.22);
+  }
+
+  function playFoulBeep(){
+    if(!audioCtx) return;
+    playTone(2600, 0.16, 'square', 0.11, 0);
+    playTone(2100, 0.2, 'square', 0.11, 0.2);
+  }
+
+  function playGoalRoar(){
+    if(!audioCtx) return;
+    var t0 = audioCtx.currentTime;
+    var bufSize = audioCtx.sampleRate * 1.6;
+    var buffer = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate);
+    var data = buffer.getChannelData(0);
+    for(var i=0;i<bufSize;i++) data[i] = (Math.random()*2-1);
+    var src = audioCtx.createBufferSource();
+    src.buffer = buffer;
+    var filter = audioCtx.createBiquadFilter();
+    filter.type='bandpass'; filter.frequency.value=850; filter.Q.value=0.4;
+    var g = audioCtx.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(0.42, t0+0.15);
+    g.gain.linearRampToValueAtTime(0.05, t0+1.4);
+    src.connect(filter).connect(g).connect(audioCtx.destination);
+    src.start(t0); src.stop(t0+1.6);
+  }
+
   function loadConfig(cb){
     fetch('config.json').then(function(r){
       if(!r.ok) throw new Error('bad status');
@@ -182,11 +259,25 @@
     fillBand(STW-MARGIN_X+12, MARGIN_Y, STW-6, STH-MARGIN_Y);
   }
   var crowdMood = { blue:{state:'idle',timer:0}, red:{state:'idle',timer:0} };
-  function setCrowdMood(team,state,dur){ crowdMood[team].state=state; crowdMood[team].timer=dur; }
+  function refreshAmbientFromMood(){
+    var target = 0.07;
+    if(crowdMood.blue.state==='cheer' || crowdMood.red.state==='cheer') target = 0.34;
+    else if(crowdMood.blue.state==='sad' && crowdMood.red.state==='sad') target = 0.04;
+    setAmbientTarget(target);
+  }
+  function setCrowdMood(team,state,dur){
+    crowdMood[team].state=state; crowdMood[team].timer=dur;
+    refreshAmbientFromMood();
+  }
   function updateCrowdMood(dt){
+    var changed = false;
     ['blue','red'].forEach(function(t){
-      if(crowdMood[t].timer>0){ crowdMood[t].timer -= dt; if(crowdMood[t].timer<=0) crowdMood[t].state='idle'; }
+      if(crowdMood[t].timer>0){
+        crowdMood[t].timer -= dt;
+        if(crowdMood[t].timer<=0){ crowdMood[t].state='idle'; changed=true; }
+      }
     });
+    if(changed) refreshAmbientFromMood();
   }
   function drawCrowd(t){
     for(var i=0;i<crowd.length;i++){
@@ -241,8 +332,9 @@
           players.push({
             team:T.team, role:role, isUser:isUserSlot,
             name:g.name, origin:g.origin,
-            x:x, y:y, baseX:x, baseY:y,
+            x:x, y:y, baseX:x, baseY:y, vx:0, vy:0,
             facing:{x:T.attackDir,y:0},
+            jinkSign: Math.random()<0.5 ? 1 : -1,
             skillScore: skillScore,
             skill: skillToMultiplier(skillScore),
             actionCooldown:0, shotTimer:rand(0.3,0.8),
@@ -345,6 +437,7 @@
   function triggerStoppage(kind, possessionTeam, x, y){
     phase = 'stoppage'; phaseTimer = 1.6;
     placeBallAt(x,y);
+    playWhistle(0);
     if(kind==='offside') flash('OFFSIDE!', 'Bola untuk '+(possessionTeam==='blue'?'Tim Biru':'Tim Merah'), SVG.flag);
     else if(kind==='foul') flash('PELANGGARAN!', 'Bola untuk '+(possessionTeam==='blue'?'Tim Biru':'Tim Merah'), SVG.whistle);
   }
@@ -355,7 +448,12 @@
     if(keys.up) dy-=1; if(keys.down) dy+=1; if(keys.left) dx-=1; if(keys.right) dx+=1;
     var dir = normVec(dx,dy);
     var speed = CFG.match.userSpeed * matchConfig.speedMultiplier;
-    if(dir.x!==0 || dir.y!==0){ p.facing=dir; p.x+=dir.x*speed*dt; p.y+=dir.y*speed*dt; }
+    if(dir.x!==0 || dir.y!==0) p.facing=dir;
+    var targetVx = dir.x*speed, targetVy = dir.y*speed;
+    var smooth = clamp(dt*8, 0, 1);
+    p.vx += (targetVx-p.vx)*smooth;
+    p.vy += (targetVy-p.vy)*smooth;
+    p.x += p.vx*dt; p.y += p.vy*dt;
     p.x = clamp(p.x, PLAYER_R, FW-PLAYER_R);
     p.y = clamp(p.y, PLAYER_R, FH-PLAYER_R);
     if(keys.shoot && ball.controller===p && ball.freeTimer<=0){
@@ -394,6 +492,14 @@
       if(ctrl===p){
         var tX=oppGoalX, tY=goalY;
         dir = normVec(tX-p.x, tY-p.y);
+        var nearOpp = nearestOfTeam(p.team==='blue'?'red':'blue', p.x, p.y);
+        if(nearOpp){
+          var dOppSq = (nearOpp.x-p.x)*(nearOpp.x-p.x)+(nearOpp.y-p.y)*(nearOpp.y-p.y);
+          if(dOppSq < 70*70){
+            var perp = { x:-dir.y, y:dir.x };
+            dir = normVec(dir.x + perp.x*p.jinkSign*0.65, dir.y + perp.y*p.jinkSign*0.65);
+          }
+        }
         var dGoal = Math.sqrt((p.x-oppGoalX)*(p.x-oppGoalX)+(p.y-goalY)*(p.y-goalY));
         if(dGoal < CFG.match.shootRange){
           p.shotTimer -= dt;
@@ -426,7 +532,11 @@
     }
 
     if(dir.x!==0 || dir.y!==0) p.facing = dir;
-    p.x += dir.x*speed*dt; p.y += dir.y*speed*dt;
+    var targetVx = dir.x*speed, targetVy = dir.y*speed;
+    var smoothAI = clamp(dt*6.5, 0, 1);
+    p.vx += (targetVx-p.vx)*smoothAI;
+    p.vy += (targetVy-p.vy)*smoothAI;
+    p.x += p.vx*dt; p.y += p.vy*dt;
     p.x = clamp(p.x, PLAYER_R, FW-PLAYER_R);
     p.y = clamp(p.y, PLAYER_R, FH-PLAYER_R);
   }
@@ -486,6 +596,7 @@
               var icon = cardResult==='yellow' ? SVG.yellow : (cardResult ? SVG.red : SVG.whistle);
               phase='stoppage'; phaseTimer=1.7;
               placeBallAt(p.x,p.y);
+              playFoulBeep();
               flash('PELANGGARAN!', subtitle || ('Bola untuk '+(p.team==='blue'?'Tim Biru':'Tim Merah')), icon);
               return;
             } else {
@@ -519,6 +630,7 @@
     if(scoringTeam==='blue') scoreBlue++; else scoreRed++;
     scoreBlueEl.textContent = scoreBlue; scoreRedEl.textContent = scoreRed;
     phase='celebrate'; phaseTimer=2.2;
+    playGoalRoar();
     flash('GOL!', scoringTeam==='blue'?'Tim Biru unggul!':'Tim Merah unggul!', SVG.ball);
     if(scoringTeam==='blue'){ setCrowdMood('blue','cheer',2.6); setCrowdMood('red','sad',2.6); }
     else { setCrowdMood('red','cheer',2.6); setCrowdMood('blue','sad',2.6); }
@@ -638,6 +750,7 @@
 
   function endMatch(){
     phase='ended';
+    playWhistle(1);
     finalScoreLine.textContent = scoreBlue+' - '+scoreRed;
     var tag,color;
     if(scoreBlue>scoreRed){ tag='MENANG!'; color='var(--accent3)'; }
@@ -664,7 +777,11 @@
         drawStadium(tSec); endMatch(); return;
       }
       timePillEl.textContent = fmtTime(matchTime);
-      players.forEach(function(p){ if(p.isUser) updateUser(p,dt); else updateAIPlayer(p,dt); });
+      if(matchConfig.spectator){
+        players.forEach(function(p){ updateAIPlayer(p,dt); });
+      } else {
+        players.forEach(function(p){ if(p.isUser) updateUser(p,dt); else updateAIPlayer(p,dt); });
+      }
       resolvePlayerCollisions();
       if(phase==='play') updateBall(dt);
     } else if(phase==='celebrate' || phase==='kickoff' || phase==='stoppage'){
@@ -701,9 +818,10 @@
       container.innerHTML = list.map(function(p){
         var grade = gradeFor(p.skillScore);
         var flag = p.origin==='id' ? '🇮🇩' : '🌍';
+        var userTag = p.isUser ? (' <span class="pscTag">'+(matchConfig.spectator?'BINTANG':'KAMU')+'</span>') : '';
         return '<div class="playerStatCard">'+
           '<div class="pscBadge '+p.role+'">'+p.role+'</div>'+
-          '<div class="pscInfo"><div class="pscName">'+p.name+(p.isUser?' <span class="pscTag">KAMU</span>':'')+'</div>'+
+          '<div class="pscInfo"><div class="pscName">'+p.name+userTag+'</div>'+
           '<div class="pscTag">'+flag+' '+(p.origin==='id'?'Lokal':'Internasional')+'</div></div>'+
           '<div class="pscScore"><div class="pscNum" style="color:'+grade.color+'">'+p.skillScore+'</div>'+
           '<div class="pscGrade" style="color:'+grade.color+'">'+grade.label+'</div></div>'+
@@ -724,14 +842,24 @@
     scoreBlueEl.textContent='0'; scoreRedEl.textContent='0';
     matchTime = matchConfig.seconds;
     timePillEl.textContent = fmtTime(matchTime);
-    modePillEl.textContent = matchConfig.label;
+    modePillEl.textContent = matchConfig.label + (matchConfig.spectator ? ' · SPECTATOR' : '');
     ball.x=FW/2; ball.y=FH/2; ball.vx=0; ball.vy=0; ball.controller=null; ball.freeTimer=0; ball.offsideFlag=null;
 
     lineupOverlay.classList.add('hidden');
     endOverlay.classList.add('hidden');
 
+    if(matchConfig.spectator){
+      controlsEl.classList.add('hidden');
+      hintEl.classList.add('hidden');
+    } else {
+      var isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints>0;
+      if(isTouch) controlsEl.classList.remove('hidden'); else hintEl.classList.remove('hidden');
+    }
+
+    ensureAudio();
+    playWhistle(1);
     phase='kickoff'; phaseTimer=1.0;
-    flash('KICK OFF!', matchConfig.label, SVG.whistle);
+    flash('KICK OFF!', matchConfig.label + (matchConfig.spectator?' (Nonton)':''), SVG.whistle);
     setCrowdMood('blue','idle',0); setCrowdMood('red','idle',0);
 
     lastFrameTs=null;
@@ -749,6 +877,7 @@
 
     document.querySelectorAll('.modeBtn').forEach(function(btn){
       btn.addEventListener('click', function(){
+        ensureAudio();
         var mode = btn.getAttribute('data-mode');
         if(mode==='sandbox'){
           modeOverlay.classList.add('hidden');
@@ -761,7 +890,8 @@
           skillMin: preset.skillMin, skillMax: preset.skillMax,
           offside: preset.offside, fouls: preset.fouls,
           referee: preset.referee, seconds: preset.seconds,
-          speedMultiplier: preset.speedMultiplier
+          speedMultiplier: preset.speedMultiplier,
+          spectator: false
         }, preset.label);
       });
     });
@@ -790,7 +920,8 @@
         fouls: document.getElementById('sbFouls').value==='1',
         referee: document.getElementById('sbReferee').value,
         seconds: Math.max(30, (parseInt(document.getElementById('sbDuration').value,10)||5)*60),
-        speedMultiplier: parseFloat(sbSpeedInput.value) || 1
+        speedMultiplier: parseFloat(sbSpeedInput.value) || 1,
+        spectator: document.getElementById('sbSpectator').value==='1'
       };
       goToLineup(cfg, 'SANDBOX');
     });
@@ -842,7 +973,7 @@
     applyFieldConstants();
     wireEvents();
     // idle preview render
-    matchConfig = { squad: CFG.squadDefault, skillMin: CFG.modes.normal.skillMin, skillMax: CFG.modes.normal.skillMax, offside:true, fouls:true, referee:'adil', seconds:300, speedMultiplier:1, label:'NORMAL' };
+    matchConfig = { squad: CFG.squadDefault, skillMin: CFG.modes.normal.skillMin, skillMax: CFG.modes.normal.skillMax, offside:true, fouls:true, referee:'adil', seconds:300, speedMultiplier:1, spectator:false, label:'NORMAL' };
     setupReferee('adil');
     buildSquad();
     resize();
