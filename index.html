@@ -9,26 +9,40 @@
 <body>
 <div id="app">
 
-  <div id="hud">
-    <div class="pill" id="modePill">NORMAL</div>
-    <div class="pill" id="scorePill">
-      <span class="teamB">BIRU</span>
-      <span id="scoreBlue">0</span>
-      <span class="dash">—</span>
-      <span id="scoreRed">0</span>
-      <span class="teamR">MERAH</span>
+  <!-- BROADCAST SCOREBOARD -->
+  <div id="scoreboard">
+    <div class="sbSide sbLeft" id="sbTeamBlue">
+      <span class="sbFlag" id="sbFlagBlue">🔵</span>
+      <span class="sbName" id="sbNameBlue">TIM BIRU</span>
+      <span class="sbScore" id="sbScoreBlue">0</span>
     </div>
-    <div class="pill" id="timePill">05:00</div>
+    <div class="sbMid">
+      <div class="sbComp">FBG MATCH</div>
+      <div class="sbClock" id="sbClock">00:00</div>
+      <div class="sbPeriod" id="sbPeriod">BELUM MULAI</div>
+    </div>
+    <div class="sbSide sbRight" id="sbTeamRed">
+      <span class="sbScore" id="sbScoreRed">0</span>
+      <span class="sbName" id="sbNameRed">TIM MERAH</span>
+      <span class="sbFlag" id="sbFlagRed">🔴</span>
+    </div>
   </div>
 
   <div id="cardsHud">
-    <div class="cardRow"><span class="cardDot yellow"></span><span class="teamB">Biru</span> <span id="cyB">0</span><span class="cardDot red"></span><span id="crB">0</span></div>
-    <div class="cardRow"><span class="cardDot yellow"></span><span class="teamR">Merah</span> <span id="cyR">0</span><span class="cardDot red"></span><span id="crR">0</span></div>
+    <div class="cardRow"><span class="cardDot yellow"></span><span id="cardsBlueName">Biru</span> <span id="cyB">0</span><span class="cardDot red"></span><span id="crB">0</span></div>
+    <div class="cardRow"><span class="cardDot yellow"></span><span id="cardsRedName">Merah</span> <span id="cyR">0</span><span class="cardDot red"></span><span id="crR">0</span></div>
+  </div>
+
+  <!-- Broadcast lower-third banner (event tetap jalan di belakangnya) -->
+  <div id="banner"><div class="bannerInner" id="bannerInner"></div></div>
+
+  <!-- Half-time ad break -->
+  <div id="adBreak" class="hidden">
+    <div class="adCard" id="adCard"></div>
   </div>
 
   <div id="canvasWrap">
     <canvas id="field"></canvas>
-    <div id="centerFlash"></div>
   </div>
 
   <div id="controls" class="hidden">
@@ -46,15 +60,48 @@
     <div class="card cardWide">
       <h1>Bola Gol</h1>
       <p class="lead">
-        Kamu jadi pemain <b style="color:#7de1ff">Tim Biru</b>, lawan <b style="color:#ff6b6b">Tim Merah</b> dikontrol AI sesuai kartu skill masing-masing pemain (50-200).<br>
-        <b>WASD</b>/panah gerak, <b>Spasi</b> tendang/oper. Lengkap wasit, kartu, pelanggaran, offside.
+        Kamu jadi pemain <b id="leadBlueName" style="color:#7de1ff">Tim Biru</b>, lawan <b id="leadRedName" style="color:#ff6b6b">Tim Merah</b>.
+        Papan skor ala siaran, wasit, kartu, offside, pergantian pemain — semua jalan terus tanpa jeda pas ada event.
       </p>
       <div class="modeGrid">
         <button class="modeBtn" data-mode="latihan"><span class="modeName">Latihan</span><span class="modeDesc">Tanpa wasit, lawan lemah (skill 50-75)</span></button>
         <button class="modeBtn" data-mode="easy"><span class="modeName">Easy</span><span class="modeDesc">Skill lawan 75-105</span></button>
         <button class="modeBtn" data-mode="normal"><span class="modeName">Normal (Sedang)</span><span class="modeDesc">Skill lawan 105-140</span></button>
         <button class="modeBtn" data-mode="hard"><span class="modeName">Susah</span><span class="modeDesc">Skill lawan 140-195</span></button>
-        <button class="modeBtn wide" data-mode="sandbox"><span class="modeName">Sandbox — Bebas Parah</span><span class="modeDesc">Atur formasi, skill 50-200, offside, wasit, durasi, kecepatan</span></button>
+        <button class="modeBtn wide" data-mode="sandbox"><span class="modeName">Sandbox — Bebas Parah</span><span class="modeDesc">Half/full/extra time custom, hydration break, cadangan pemain, semua bebas</span></button>
+      </div>
+      <div class="sbBtnRow">
+        <div class="btn ghost" id="openCustomBtn">🎨 Kustomisasi Tim (nama, warna, bendera, logo)</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TEAM CUSTOMIZATION -->
+  <div id="customOverlay" class="overlay hidden">
+    <div class="card cardWide scrollable">
+      <h1>Kustomisasi Tim</h1>
+      <p class="lead">Ubah nama, warna, bendera/emoji, dan logo (gambar) untuk kedua tim. Tersimpan otomatis di perangkat ini.</p>
+      <div class="sbGrid">
+        <div class="sbCol">
+          <h3 class="teamB">Tim Biru (kamu)</h3>
+          <label>Nama Tim<input type="text" id="custBlueName" maxlength="20"></label>
+          <label>Warna<input type="color" id="custBlueColor"></label>
+          <label>Bendera/Emoji<input type="text" id="custBlueFlag" maxlength="4"></label>
+          <label>Logo (opsional)<input type="file" id="custBlueLogo" accept="image/*"></label>
+          <div class="logoPreviewRow"><img id="custBlueLogoPreview" class="logoPreview hidden"><div class="btn ghost small" id="custBlueLogoClear">Hapus Logo</div></div>
+        </div>
+        <div class="sbCol">
+          <h3 class="teamR">Tim Merah (lawan)</h3>
+          <label>Nama Tim<input type="text" id="custRedName" maxlength="20"></label>
+          <label>Warna<input type="color" id="custRedColor"></label>
+          <label>Bendera/Emoji<input type="text" id="custRedFlag" maxlength="4"></label>
+          <label>Logo (opsional)<input type="file" id="custRedLogo" accept="image/*"></label>
+          <div class="logoPreviewRow"><img id="custRedLogoPreview" class="logoPreview hidden"><div class="btn ghost small" id="custRedLogoClear">Hapus Logo</div></div>
+        </div>
+      </div>
+      <div class="sbBtnRow">
+        <div class="btn ghost" id="custReset">Reset Default</div>
+        <div class="btn" id="custSave">Simpan & Kembali</div>
       </div>
     </div>
   </div>
@@ -63,7 +110,7 @@
   <div id="sandboxOverlay" class="overlay hidden">
     <div class="card cardWide scrollable">
       <h1>Sandbox</h1>
-      <p class="lead">Atur formasi & aturan sesuka hati. Kiper boleh sebanyak apapun, skill pemain lawan bisa 50-200.</p>
+      <p class="lead">Bebas parah: formasi, skill, waktu, hydration break, dan cadangan pemain semua bisa diatur sendiri.</p>
       <div class="sbGrid">
         <div class="sbCol">
           <h3 class="teamB">Tim Biru (kamu + AI)</h3>
@@ -71,7 +118,8 @@
           <label>Bek (DF)<input type="number" id="sbBlueDF" min="0" max="6" value="2"></label>
           <label>Gelandang (MF)<input type="number" id="sbBlueMF" min="0" max="6" value="2"></label>
           <label>Penyerang AI (FW)<input type="number" id="sbBlueFW" min="0" max="6" value="1"></label>
-          <p class="tiny">*Kamu selalu jadi 1 penyerang tambahan, skill kartu tetap.</p>
+          <label>Pemain Cadangan<input type="number" id="sbBlueBench" min="0" max="8" value="2"></label>
+          <p class="tiny">*Kamu selalu jadi 1 penyerang tambahan & tidak pernah diganti otomatis.</p>
         </div>
         <div class="sbCol">
           <h3 class="teamR">Tim Merah (AI)</h3>
@@ -79,6 +127,7 @@
           <label>Bek (DF)<input type="number" id="sbRedDF" min="0" max="6" value="2"></label>
           <label>Gelandang (MF)<input type="number" id="sbRedMF" min="0" max="6" value="2"></label>
           <label>Penyerang (FW)<input type="number" id="sbRedFW" min="0" max="6" value="2"></label>
+          <label>Pemain Cadangan<input type="number" id="sbRedBench" min="0" max="8" value="2"></label>
         </div>
       </div>
       <div class="sbGrid">
@@ -88,8 +137,8 @@
           <label class="rowLabel">Offside
             <select id="sbOffside"><option value="1" selected>Aktif</option><option value="0">Nonaktif</option></select>
           </label>
-          <label class="rowLabel">Mode Spectator (nonton doang, gak main)
-            <select id="sbSpectator"><option value="0" selected>Nonaktif — aku main</option><option value="1">Aktif — AI vs AI, aku nonton</option></select>
+          <label class="rowLabel">Mode Spectator (nonton doang)
+            <select id="sbSpectator"><option value="0" selected>Nonaktif — aku main</option><option value="1">Aktif — AI vs AI</option></select>
           </label>
         </div>
         <div class="sbCol">
@@ -104,9 +153,23 @@
               <option value="pemula">Pemula (banyak salah)</option>
             </select>
           </label>
-          <label class="rowLabel">Durasi (menit)<input type="number" id="sbDuration" min="1" max="30" value="5"></label>
           <label class="rowLabel">Kecepatan Pemain
             <input type="range" id="sbSpeed" min="0.5" max="2" step="0.1" value="1"> <span id="sbSpeedVal">1.0x</span>
+          </label>
+        </div>
+      </div>
+      <div class="sbGrid">
+        <div class="sbCol">
+          <label class="rowLabel">Half Time (menit)<input type="number" id="sbHalfTime" min="0.5" max="30" step="0.5" value="2.5"></label>
+          <label class="rowLabel">Full Time (menit)<input type="number" id="sbFullTime" min="1" max="60" step="0.5" value="5"></label>
+        </div>
+        <div class="sbCol">
+          <label class="rowLabel">Extra Time kalau seri
+            <select id="sbExtraTime"><option value="0" selected>Nonaktif</option><option value="1">Aktif</option></select>
+          </label>
+          <label class="rowLabel">Durasi Extra Time (menit)<input type="number" id="sbExtraMinutes" min="1" max="20" step="0.5" value="2"></label>
+          <label class="rowLabel">Hydration Break (khusus Sandbox)
+            <select id="sbHydration"><option value="0" selected>Nonaktif</option><option value="1">Aktif</option></select>
           </label>
         </div>
       </div>
@@ -117,20 +180,14 @@
     </div>
   </div>
 
-  <!-- LINEUP / KARTU PEMAIN -->
+  <!-- LINEUP -->
   <div id="lineupOverlay" class="overlay hidden">
     <div class="card cardWide scrollable">
       <h1>Line-up</h1>
-      <p class="lead">Kartu skill tiap pemain (50-200). Cek dulu susunan sebelum kick-off.</p>
+      <p class="lead">Kartu skill starting XI (50-200). Cek dulu sebelum kick-off.</p>
       <div class="lineupGrid">
-        <div>
-          <h3 class="teamB">Tim Biru</h3>
-          <div id="lineupBlue" class="cardGrid"></div>
-        </div>
-        <div>
-          <h3 class="teamR">Tim Merah</h3>
-          <div id="lineupRed" class="cardGrid"></div>
-        </div>
+        <div><h3 class="teamB" id="lineupBlueTitle">Tim Biru</h3><div id="lineupBlue" class="cardGrid"></div></div>
+        <div><h3 class="teamR" id="lineupRedTitle">Tim Merah</h3><div id="lineupRed" class="cardGrid"></div></div>
       </div>
       <div class="sbBtnRow">
         <div class="btn ghost" id="lineupBack">Kembali</div>
