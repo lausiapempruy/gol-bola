@@ -16,10 +16,23 @@
     { "max": 200, "label": "Legendaris","color": "#ff9ad1" }
   ],
 
+  "teamDefaults": {
+    "blue": { "name": "Tim Biru", "color": "#3fa8e0", "flag": "🔵", "logo": null },
+    "red":  { "name": "Tim Merah", "color": "#e0483f", "flag": "🔴", "logo": null }
+  },
+
   "squadDefault": {
     "blue": { "GK": 1, "DF": 2, "MF": 2, "FW": 1 },
     "red":  { "GK": 1, "DF": 2, "MF": 2, "FW": 2 }
   },
+
+  "brands": [
+    { "name": "VOLTA ENERGY",   "tagline": "Power The Match",     "color": "#f4c400", "accent": "#111318" },
+    { "name": "AERIS AIRWAYS",  "tagline": "Fly With Champions",  "color": "#1c3faa", "accent": "#ffffff" },
+    { "name": "NEXORA MOBILE",  "tagline": "Connect The Game",    "color": "#9b3ffb", "accent": "#ffffff" },
+    { "name": "STRIKE SPORT",   "tagline": "Wear The Win",        "color": "#e0212f", "accent": "#111318" },
+    { "name": "GOLDLEAF BANK",  "tagline": "Banking On Victory",  "color": "#caa03d", "accent": "#111318" }
+  ],
 
   "match": {
     "fieldWidth": 960,
@@ -32,15 +45,14 @@
     "userSpeed": 175,
     "aiBaseSpeed": 150,
     "shootPower": 430,
-    "shootRange": 300,
-    "defaultSeconds": 300
+    "shootRange": 300
   },
 
   "modes": {
-    "latihan": { "label": "LATIHAN", "skillMin": 50,  "skillMax": 75,  "offside": false, "fouls": false, "referee": "pemula", "seconds": 300, "speedMultiplier": 1.0 },
-    "easy":    { "label": "EASY",    "skillMin": 75,  "skillMax": 105, "offside": true,  "fouls": true,  "referee": "pemula", "seconds": 300, "speedMultiplier": 1.0 },
-    "normal":  { "label": "NORMAL",  "skillMin": 105, "skillMax": 140, "offside": true,  "fouls": true,  "referee": "adil",   "seconds": 300, "speedMultiplier": 1.0 },
-    "hard":    { "label": "SUSAH",   "skillMin": 140, "skillMax": 195, "offside": true,  "fouls": true,  "referee": "pro",    "seconds": 300, "speedMultiplier": 1.08 }
+    "latihan": { "label": "LATIHAN", "skillMin": 50,  "skillMax": 75,  "offside": false, "fouls": false, "referee": "pemula", "halfTimeMinutes": 2.5, "fullTimeMinutes": 5, "extraTimeEnabled": false, "extraTimeMinutes": 0, "hydrationBreak": false, "benchBlue": 0, "benchRed": 0, "speedMultiplier": 1.0 },
+    "easy":    { "label": "EASY",    "skillMin": 75,  "skillMax": 105, "offside": true,  "fouls": true,  "referee": "pemula", "halfTimeMinutes": 2.5, "fullTimeMinutes": 5, "extraTimeEnabled": false, "extraTimeMinutes": 0, "hydrationBreak": false, "benchBlue": 0, "benchRed": 0, "speedMultiplier": 1.0 },
+    "normal":  { "label": "NORMAL",  "skillMin": 105, "skillMax": 140, "offside": true,  "fouls": true,  "referee": "adil",   "halfTimeMinutes": 2.5, "fullTimeMinutes": 5, "extraTimeEnabled": false, "extraTimeMinutes": 0, "hydrationBreak": false, "benchBlue": 0, "benchRed": 0, "speedMultiplier": 1.0 },
+    "hard":    { "label": "SUSAH",   "skillMin": 140, "skillMax": 195, "offside": true,  "fouls": true,  "referee": "pro",    "halfTimeMinutes": 2.5, "fullTimeMinutes": 5, "extraTimeEnabled": false, "extraTimeMinutes": 0, "hydrationBreak": false, "benchBlue": 0, "benchRed": 0, "speedMultiplier": 1.08 }
   },
 
   "refereeProfiles": {
